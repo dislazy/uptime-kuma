@@ -1,0 +1,118 @@
+# go_server Docker 镜像构建与推送
+#
+# 产物：ghcr.io/<owner>/uptime-kuma-go
+#   - push 到 main 或手动触发 → latest + main-<sha> + sha-<sha>
+#   - 推送 v* tag            → x.y.z / x.y / x + latest
+#
+# 说明：构建上下文是仓库根目录（前端源码 + go_server），Dockerfile 是多阶段：
+#   1) node 编译前端 dist → 2) go 编译静态二进制 → 3) alpine 运行镜像
+# 支持 linux/amd64 与 linux/arm64（QEMU 模拟，arm64 会慢一些）。
+
+name: Build Go Server Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "go_server/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".npmrc"
+      - "index.html"
+      - "vite.config.mjs"
+      - "tsconfig.json"
+      - "src/**"
+      - "public/**"
+      - ".github/workflows/build-go-server.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-go-server-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/uptime-kuma-go
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare version info
+        id: meta
+        run: |
+          # 前端版本号 + go 构建后缀，注入到二进制里（/api/health 会返回）
+          FE_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*"\(.*\)".*/\1/')
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "VERSION=${FE_VERSION}-go.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "COMMIT=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: tags
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=raw,value=main-{{sha}},enable=${{ startsWith(github.ref, 'refs/heads/') }}
+            type=sha,pattern=sha-{{short}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./go_server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.meta.outputs.VERSION }}
+            COMMIT=${{ steps.meta.outputs.SHORT_SHA }}
+
+      - name: Smoke test (amd64)
+        run: |
+          docker run -d --name kuma-smoke -p 13001:3001 "${IMAGE}:sha-${{ steps.meta.outputs.SHORT_SHA }}"
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:13001/api/health | grep -q '"ok":true'; then
+              echo "healthcheck OK"
+              docker rm -f kuma-smoke > /dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::容器健康检查未通过"
+          docker logs kuma-smoke
+          docker rm -f kuma-smoke > /dev/null
+          exit 1
