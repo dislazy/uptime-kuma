@@ -67,3 +67,15 @@ If the git user name does not match any of them, do not read
 
 If it matches, read `.github/copilot-instructions.md` and follow it in addition
 to this file.
+
+---
+
+# Note for this fork (dislazy/uptime-kuma)
+
+This fork adds a Go re-implementation of the Node backend in [`go_server/`](go_server/).
+The frontend (`src/`) is reused unmodified, and `master` stays identical to upstream.
+
+- **Agents taking over work on this fork**: read [`go_server/AGENTS.md`](go_server/AGENTS.md) first —
+  it has the directory map, current status, build/test commands, hard conventions and known pitfalls.
+- The `master` branch policy above applies to upstream PRs only; work on this fork happens on `main`.
+- Syncing upstream changes: see [`go_server/SYNC.md`](go_server/SYNC.md).

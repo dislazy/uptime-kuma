@@ -11,6 +11,38 @@ Uptime Kuma is an easy-to-use self-hosted monitoring tool.
 
 <img src="https://user-images.githubusercontent.com/1336778/212262296-e6205815-ad62-488c-83ec-a5b0d0689f7c.jpg" width="700" alt="Uptime Kuma Dashboard Screenshot" />
 
+## 🐹 About This Fork / 关于本项目
+
+本仓库 fork 自 [louislam/uptime-kuma](https://github.com/louislam/uptime-kuma)，在此之上**用 Go 重写了全部后端**（目录 [`go_server/`](go_server/)），目标是让低配置服务器也能跑 Uptime Kuma——不再需要 Node 运行时，最终产物是一个约 51MB 的静态二进制。
+
+| 分支 | 内容 |
+| --- | --- |
+| `master` | 与官方上游完全一致（同步基线，不要改动） |
+| `main` | 官方代码 + `go_server/` Go 后端（工作分支） |
+
+**相对官方做了什么：**
+
+- **新增 `go_server/`**：Golang 复刻的后端，功能对标官方 Node 版——
+  34 种监控类型、111 个通知渠道、Socket.IO v4 协议层、2FA、状态页（含 RSS/徽章）、
+  维护窗口、监控条件、统计聚合、Docker 主机管理等，与官方逐一对应
+- **前端零改动**：Vue 源码原样复用，构建产物由 Go 进程托管
+- **数据库零迁移**：完全兼容官方 SQLite schema，老用户直接拷 `kuma.db` 即可运行；
+  列名自适应兼容官方 v3 库 camelCase/snake_case 混用的情况
+- **新增 Dockerfile 与 CI**：`go_server/Dockerfile` 多阶段构建（前端 + Go + 运行镜像），
+  GitHub Actions 自动构建多架构镜像推送到 `ghcr.io/<owner>/uptime-kuma-go`
+
+**没有改动什么：** 官方的 Node 后端（根目录 `server/`）、数据库迁移脚本、
+前端源码、构建配置全部保留原样——理论上本仓库仍可作为官方 fork 正常运行 Node 版。
+
+详细文档：
+
+- [`go_server/README.md`](go_server/README.md) — Go 后端功能清单与已知差异
+- [`go_server/AGENTS.md`](go_server/AGENTS.md) — 接手指南（目录地图、约定、踩坑记录）
+- [`go_server/SYNC.md`](go_server/SYNC.md) — 同步官方上游改动的基线与映射表
+
+> ⚠️ 注意：本 fork 的 Go 后端为个人项目，未经官方测试；遇到问题请先在本 fork 提 issue，
+> 不要把 `go_server` 相关问题报给官方上游。
+
 ## 🥔 Live Demo
 
 Try it!
