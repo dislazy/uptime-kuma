@@ -1,0 +1,19 @@
+# 编译产物
+go_server
+go_server.exe
+*.test
+*.out
+
+# 本地数据（不要提交数据库）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 前端产物（由 docker build 或 make web 生成）
+web/dist/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
