@@ -142,6 +142,8 @@ jobs:
       - name: Prepare build context
         run: |
           cp go_server/Dockerfile.ci docker-ci/Dockerfile
+          # download-artifact 不保留可执行位，显式补上（Dockerfile.ci 里也有 chmod 兜底）
+          chmod +x docker-ci/go_server-linux-*
           ls -lh docker-ci/ docker-ci/dist | head -20
           test -f docker-ci/go_server-linux-amd64
           test -f docker-ci/go_server-linux-arm64
