@@ -11,7 +11,11 @@
 ############################################
 # 上游 package.json 要求 node >= 26；若你的环境只有 22/24，把这里换成 node:24-alpine
 # 并确认 npm run build 能通过（前端本身对 Node 版本不敏感）。
-FROM node:26-alpine AS web
+#
+# --platform=$BUILDPLATFORM：多架构构建时强制在本机架构上跑 Node，
+# 产物 dist 与架构无关。否则 arm64 镜像的 npm run build 会在 QEMU 里模拟执行，
+# 极慢且容易 OOM（GitHub Actions runner 只有 7GB 内存）。
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src
 
 COPY package.json package-lock.json .npmrc ./
@@ -26,7 +30,10 @@ RUN npm run build
 ############################################
 # 2) 编译 Go 后端
 ############################################
-FROM golang:1.26-alpine AS build
+# 同理固定在本机架构执行，用 GOARCH 交叉编译出目标架构的二进制——
+# Go 是交叉编译器，构建阶段完全不需要 QEMU 模拟。
+# TARGETOS/TARGETARCH 由 BuildKit 自动注入（amd64 → linux/amd64，arm64 → linux/arm64）。
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 WORKDIR /src/go_server
 
 # 先只拷依赖清单，让 go mod download 这层能被缓存
@@ -41,7 +48,9 @@ COPY --from=web /src/dist ./web/dist
 
 ARG VERSION=dev
 ARG COMMIT=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
         -trimpath \
         -ldflags="-s -w -X github.com/songbo/uptime-kuma/go_server/internal/version.Version=${VERSION} -X github.com/songbo/uptime-kuma/go_server/internal/version.Commit=${COMMIT}" \
         -o /out/go_server ./cmd/go_server

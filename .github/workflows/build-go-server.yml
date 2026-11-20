@@ -56,11 +56,6 @@ jobs:
           echo "COMMIT=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
