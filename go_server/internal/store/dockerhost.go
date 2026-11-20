@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
 )
 
 // DockerHost 对应官方 docker_host 表。

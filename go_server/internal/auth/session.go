@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // 会话 Cookie 名。better-auth 默认值，前端与 socket 握手都依赖它。

@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // GRPCChecker 按用户给的 .proto 动态构造请求，调一次 unary 方法再做 keyword 断言。

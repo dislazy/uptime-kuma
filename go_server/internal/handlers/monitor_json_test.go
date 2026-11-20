@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // TestMonitorJSONConfigIsObject 守住 monitor.config 的往返形态。

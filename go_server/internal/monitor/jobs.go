@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 // sprintfRetry 生成重试中的提示文案，与官方 "... (retry 1/3)" 格式对齐。

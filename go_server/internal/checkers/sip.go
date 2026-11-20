@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // SIPOptionsChecker 向 SIP 服务器发 OPTIONS，判断是否回 200 OK。

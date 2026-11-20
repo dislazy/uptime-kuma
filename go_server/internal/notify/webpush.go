@@ -9,7 +9,7 @@ import (
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // Web Push（浏览器推送）。

@@ -14,7 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // 本文件移植第二批官方通知渠道（G2 组）。

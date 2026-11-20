@@ -52,7 +52,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
         -trimpath \
-        -ldflags="-s -w -X github.com/songbo/uptime-kuma/go_server/internal/version.Version=${VERSION} -X github.com/songbo/uptime-kuma/go_server/internal/version.Commit=${COMMIT}" \
+        -ldflags="-s -w -X github.com/dislazy/uptime-kuma/go_server/internal/version.Version=${VERSION} -X github.com/dislazy/uptime-kuma/go_server/internal/version.Commit=${COMMIT}" \
         -o /out/go_server ./cmd/go_server
 
 ############################################

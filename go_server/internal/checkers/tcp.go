@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // TCPChecker 通过 TCP 连接判断端口是否可用。

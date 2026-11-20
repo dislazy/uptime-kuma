@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/conditions"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/conditions"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // DNSChecker 解析域名并按记录内容判定。

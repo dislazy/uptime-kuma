@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // 本文件移植 g5 组 14 个官方渠道。

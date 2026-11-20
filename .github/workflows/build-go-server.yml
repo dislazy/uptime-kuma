@@ -4,9 +4,11 @@
 #   - push 到 main 或手动触发 → latest + main-<sha> + sha-<sha>
 #   - 推送 v* tag            → x.y.z / x.y / x + latest
 #
-# 说明：构建上下文是仓库根目录（前端源码 + go_server），Dockerfile 是多阶段：
-#   1) node 编译前端 dist → 2) go 编译静态二进制 → 3) alpine 运行镜像
-# 支持 linux/amd64 与 linux/arm64（QEMU 模拟，arm64 会慢一些）。
+# 设计说明：编译全部在 runner 原生环境完成（日志可见、无 QEMU 模拟编译、可断点定位）：
+#   job web   → npm run build → dist/
+#   job bin   → setup-go + go build 交叉编译（amd64 / arm64 矩阵）
+#   job image → 把产物装进镜像（go_server/Dockerfile.ci，纯 COPY 无编译）
+# 本地全流程自包含构建仍可用 go_server/Dockerfile（多阶段、源码进镜像）。
 
 name: Build Go Server Image
 
@@ -39,22 +41,107 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/uptime-kuma-go
 
 jobs:
-  build:
+  # ---------- 前端 ----------
+  web:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+          retention-days: 3
+
+  # ---------- Go 二进制（amd64 / arm64 矩阵，原生交叉编译） ----------
+  bin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Prepare version info
         id: meta
         run: |
-          # 前端版本号 + go 构建后缀，注入到二进制里（/api/health 会返回）
           FE_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*"\(.*\)".*/\1/')
-          SHORT_SHA=${GITHUB_SHA::7}
-          echo "VERSION=${FE_VERSION}-go.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "COMMIT=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${FE_VERSION}-go.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go_server/go.mod
+          cache-dependency-path: go_server/go.sum
+
+      - name: Vet (amd64 only)
+        if: matrix.arch == 'amd64'
+        working-directory: go_server
+        run: go vet ./...
+
+      - name: Build binary (linux/${{ matrix.arch }})
+        working-directory: go_server
+        env:
+          VERSION: ${{ steps.meta.outputs.VERSION }}
+          COMMIT: ${{ steps.meta.outputs.SHORT_SHA }}
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/dislazy/uptime-kuma/go_server/internal/version.Version=${VERSION} -X github.com/dislazy/uptime-kuma/go_server/internal/version.Commit=${COMMIT}" \
+            -o "../go_server-linux-${{ matrix.arch }}" ./cmd/go_server
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go_server-linux-${{ matrix.arch }}
+          path: go_server-linux-*
+          retention-days: 3
+
+  # ---------- 组装镜像并推送 ----------
+  image:
+    needs: [web, bin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: docker-ci/dist
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: go_server-linux-*
+          path: docker-ci
+          merge-multiple: true
+
+      - name: Prepare build context
+        run: |
+          cp go_server/Dockerfile.ci docker-ci/Dockerfile
+          ls -lh docker-ci/ docker-ci/dist | head -20
+          test -f docker-ci/go_server-linux-amd64
+          test -f docker-ci/go_server-linux-arm64
+          test -f docker-ci/dist/index.html
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -84,21 +171,18 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./go_server/Dockerfile
+          context: ./docker-ci
+          file: ./docker-ci/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.tags.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ steps.meta.outputs.VERSION }}
-            COMMIT=${{ steps.meta.outputs.SHORT_SHA }}
+            TARGETARCH=amd64
 
       - name: Smoke test (amd64)
         run: |
-          docker run -d --name kuma-smoke -p 13001:3001 "${IMAGE}:sha-${{ steps.meta.outputs.SHORT_SHA }}"
+          docker run -d --name kuma-smoke -p 13001:3001 "${IMAGE}:sha-${GITHUB_SHA::7}"
           for i in $(seq 1 20); do
             if curl -sf http://localhost:13001/api/health | grep -q '"ok":true'; then
               echo "healthcheck OK"

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // Result 是一次探测的结果。

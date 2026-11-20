@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // handleStatusPageData 是状态页的公开配置接口。

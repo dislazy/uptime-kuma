@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // 两步验证（better-auth twoFactor 插件兼容）。

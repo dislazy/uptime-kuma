@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // SMTPChecker 完成一次 SMTP 会话握手来判断邮件服务是否可用。

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // RedisChecker 用 RESP 协议的 PING 判断实例是否可用。

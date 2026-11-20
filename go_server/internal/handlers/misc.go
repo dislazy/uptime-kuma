@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/auth"
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/notify"
-	"github.com/songbo/uptime-kuma/go_server/internal/socketio"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/notify"
+	"github.com/dislazy/uptime-kuma/go_server/internal/socketio"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // ---------------- Web Push ----------------

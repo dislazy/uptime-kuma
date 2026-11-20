@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/checkers"
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 // Docker Host 管理。

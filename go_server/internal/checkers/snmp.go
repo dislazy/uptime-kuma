@@ -8,7 +8,7 @@ import (
 
 	"github.com/gosnmp/gosnmp"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // SNMPChecker 用 GET 取一个 OID，再对返回值做 JSON 查询断言。

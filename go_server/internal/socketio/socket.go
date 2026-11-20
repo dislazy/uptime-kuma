@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 // Handler 是一个 socket 事件处理器。

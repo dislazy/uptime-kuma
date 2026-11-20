@@ -5,7 +5,7 @@ package checkers
 import (
 	"context"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // RealBrowserChecker 在默认构建里不可用。

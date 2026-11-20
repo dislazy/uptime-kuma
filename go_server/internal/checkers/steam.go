@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // SteamChecker 通过 Steam Web API 的 GetServerList 判断服务器是否在线。

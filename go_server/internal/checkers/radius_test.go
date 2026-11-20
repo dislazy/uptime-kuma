@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // fakeRadiusServer 起一个只回单个响应的 UDP 服务端，返回监听端口。

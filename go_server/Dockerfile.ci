@@ -1,0 +1,37 @@
+# CI 专用镜像组装 Dockerfile（不做任何编译）
+#
+# .github/workflows/build-go-server.yml 已经在 runner 上原生完成：
+#   - 前端 npm run build → dist/
+#   - Go 交叉编译 → go_server-linux-{amd64,arm64}
+# 这个文件只把产物装进运行镜像。构建上下文是 workflow 准备的 docker-ci/
+# 临时目录（dist + 两个架构的二进制 + 本文件）。
+#
+# 本地全流程自包含构建（源码进镜像编）用 go_server/Dockerfile。
+#
+# GOOS/GOARCH 二进制是交叉编译产物，本镜像无需 QEMU；但 arm64 侧的
+# apk add 仍需 buildx 的 binfmt 支持（workflow 里有 setup-qemu）。
+
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata iputils \
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone
+
+WORKDIR /app
+
+ARG TARGETARCH=amd64
+COPY dist/ /app/web/dist/
+COPY go_server-linux-${TARGETARCH} /app/go_server
+
+# 与官方保持一致的约定：端口 3001、数据目录 /app/data
+ENV UPTIME_KUMA_PORT=3001 \
+    DATA_DIR=/app/data \
+    UPTIME_KUMA_WEB_DIR=/app/web/dist
+
+VOLUME ["/app/data"]
+EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/app/go_server", "-healthcheck"]
+
+ENTRYPOINT ["/app/go_server"]

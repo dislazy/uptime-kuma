@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // 本文件是四个 SQL 类监控。它们的探测流程完全一致（连库 → 执行一条语句 → 数行数），

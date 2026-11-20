@@ -20,7 +20,7 @@ import (
 
 	_ "modernc.org/sqlite" // 纯 Go 驱动，免 CGO
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 //go:embed schema.sql

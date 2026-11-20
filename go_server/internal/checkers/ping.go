@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // PingChecker 通过系统 ping 命令探测 ICMP 可达性。

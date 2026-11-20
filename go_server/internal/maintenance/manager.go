@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/cron"
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/cron"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // Broadcaster 由 hub.Hub 实现，用于状态变化时推送列表。

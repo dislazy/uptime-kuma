@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // RabbitMQChecker 走 Management API 的健康检查端点判断集群是否有告警。

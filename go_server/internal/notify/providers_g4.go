@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // 本文件移植 g4 组的 14 个官方渠道（server/notification-providers/*.js）。

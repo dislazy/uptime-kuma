@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // slugPattern 只允许官方前端能生成的字符，避免路径穿越或非法 URL。

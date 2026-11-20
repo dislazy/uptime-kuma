@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/checkers"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // checkGroup 计算分组监控的状态。

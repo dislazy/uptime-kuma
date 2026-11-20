@@ -12,11 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/checkers"
-	"github.com/songbo/uptime-kuma/go_server/internal/hub"
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // Notifier 由 notify.Engine 实现。用接口是为了让 monitor 包不依赖具体渠道实现。

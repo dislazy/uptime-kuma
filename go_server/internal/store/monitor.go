@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/checkers"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // MonitorStore 负责 monitor 表及其关联表（monitor_notification / monitor_tag）。

@@ -1,4 +1,4 @@
-module github.com/songbo/uptime-kuma/go_server
+module github.com/dislazy/uptime-kuma/go_server
 
 go 1.26.0
 

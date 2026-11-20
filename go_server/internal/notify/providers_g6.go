@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // 本文件移植 g6 批次官方渠道：Bitrix24 / smsir / gorush / Kook / octopush /

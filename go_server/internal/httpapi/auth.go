@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/auth"
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 // 本文件复刻 better-auth 的 HTTP 接口面。

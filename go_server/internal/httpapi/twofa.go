@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/auth"
+	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
 )
 
 // better-auth twoFactor 插件的 HTTP 端点。

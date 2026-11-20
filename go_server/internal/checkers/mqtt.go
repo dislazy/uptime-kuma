@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/songbo/uptime-kuma/go_server/internal/conditions"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/conditions"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // MQTTChecker 订阅一个主题并等待一条消息。

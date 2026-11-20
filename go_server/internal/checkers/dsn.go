@@ -15,8 +15,8 @@ import (
 	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/conditions"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/conditions"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // runSQLProbe 连库并执行一条语句，返回结果行数。

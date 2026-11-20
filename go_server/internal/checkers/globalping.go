@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // GlobalpingChecker 调 globalping.io 的公共探测网络做 ping / http / dns。

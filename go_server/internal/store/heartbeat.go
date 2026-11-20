@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // HeartbeatStore 负责心跳写入与查询。

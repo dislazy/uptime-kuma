@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // SystemServiceChecker 检查 systemd 服务（或 Windows 服务）是否在运行。

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
 
 // HandlePush 处理一次被动推送（/api/push/:token）。

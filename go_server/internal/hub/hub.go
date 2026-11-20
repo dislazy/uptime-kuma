@@ -4,7 +4,7 @@ package hub
 import (
 	"sync"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/socketio"
+	"github.com/dislazy/uptime-kuma/go_server/internal/socketio"
 )
 
 // Hub 是连接注册中心。

@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/auth"
-	"github.com/songbo/uptime-kuma/go_server/internal/config"
-	"github.com/songbo/uptime-kuma/go_server/internal/hub"
-	"github.com/songbo/uptime-kuma/go_server/internal/maintenance"
-	"github.com/songbo/uptime-kuma/go_server/internal/monitor"
-	"github.com/songbo/uptime-kuma/go_server/internal/store"
-	"github.com/songbo/uptime-kuma/go_server/internal/version"
+	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
+	"github.com/dislazy/uptime-kuma/go_server/internal/config"
+	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
+	"github.com/dislazy/uptime-kuma/go_server/internal/maintenance"
+	"github.com/dislazy/uptime-kuma/go_server/internal/monitor"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
+	"github.com/dislazy/uptime-kuma/go_server/internal/version"
 )
 
 // API 聚合 HTTP 接口依赖。

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // newMonitor 构造一个带 Raw 的监控，方便直接测 Check。

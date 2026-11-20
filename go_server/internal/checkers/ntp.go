@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // NTPChecker 通过 SNTP（RFC 4330 / RFC 5905 简化版）查询时间服务器。

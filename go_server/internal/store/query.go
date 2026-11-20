@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 )
 
 // Row 是查询结果的通用行，键为列名。

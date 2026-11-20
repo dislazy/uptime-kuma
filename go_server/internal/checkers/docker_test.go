@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // dockerFakeDaemon 起一个假的 Docker Engine API，按 container 状态返回 JSON。

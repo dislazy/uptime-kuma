@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/songbo/uptime-kuma/go_server/internal/model"
+	"github.com/dislazy/uptime-kuma/go_server/internal/model"
 )
 
 // RADIUS 报文类型（RFC 2865 §3）。
