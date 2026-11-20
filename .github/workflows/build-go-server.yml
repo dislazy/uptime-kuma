@@ -84,8 +84,17 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go_server/go.mod
+          # 显式固定版本，不用 go-version-file：
+          # go-version-file 曾出现过"秒成功但实际没装对版本"的情况，
+          # 导致 go build 因 `go.mod requires go >= 1.26.0` 立即退出。
+          go-version: "1.26.0"
           cache-dependency-path: go_server/go.sum
+
+      - name: Go diagnostics
+        run: |
+          which go
+          go version
+          go env GOTOOLCHAIN GOPROXY GOFLAGS GOMODCACHE GOCACHE
 
       - name: Vet (amd64 only)
         if: matrix.arch == 'amd64'
