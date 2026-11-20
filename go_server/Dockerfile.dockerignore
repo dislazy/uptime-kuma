@@ -1,0 +1,64 @@
+# go_server/Dockerfile 专用构建上下文排除清单
+#
+# 为什么需要这个文件：仓库根目录的 .dockerignore 是给官方 Node Dockerfile 用的，
+# 它把 index.html / vite.config.mjs / tsconfig.json / src/* 全部排除
+# （官方发版时前端 dist 在 CI 里提前编好，镜像构建只拷 dist，不需要前端源码）。
+#
+# 而 go_server/Dockerfile 的阶段 1 是在镜像里现场 npm run build，
+# 需要完整的前端源码。BuildKit 会优先使用与 Dockerfile 同名同目录的
+# <Dockerfile>.dockerignore，因此本文件只影响 go_server 的镜像构建，
+# 不改变官方构建行为。
+#
+# 排除原则：官方 .dockerignore 里排除的"纯后端/开发杂物"照搬，
+# 前端相关条目全部保留。
+
+# VCS 与编辑器
+.git
+.gitignore
+.github
+.idea
+.vscode
+.editorconfig
+
+# 依赖目录（镜像里会重新 npm ci / go mod download）
+**/node_modules
+**/.venv
+
+# 运行时数据与测试
+/data*
+/test
+/out
+/tmp
+/kubernetes
+/.do
+/private
+
+# 官方 Node 后端与部署杂物（go_server 不需要）
+/server
+/db
+/docker
+/ecosystem.config.js
+/app.json
+/CNAME
+/install.sh
+/yarn.lock
+/extra
+**/docker-compose*
+**/Dockerfile*
+LICENSE
+README.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+
+# go_server 自己的文档
+go_server/README.md
+go_server/SYNC.md
+go_server/AGENTS.md
+
+# 开发配置
+.eslint*
+.stylelint*
+.prettier*
+/playwright.config.js
+.env
