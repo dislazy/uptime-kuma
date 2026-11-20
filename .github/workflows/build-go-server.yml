@@ -191,7 +191,24 @@ jobs:
 
       - name: Smoke test (amd64)
         run: |
-          docker run -d --name kuma-smoke -p 13001:3001 "${IMAGE}:sha-${GITHUB_SHA::7}"
+          TAG="${IMAGE}:sha-${GITHUB_SHA::7}"
+          docker run -d --name kuma-smoke -p 13001:3001 "$TAG" || true
+          sleep 3
+          {
+            echo "## Smoke diagnostics"
+            echo '```'
+            echo "--- docker images ---"
+            docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep uptime-kuma-go
+            echo "--- docker ps ---"
+            docker ps -a --filter name=kuma-smoke
+            echo "--- docker inspect state ---"
+            docker inspect kuma-smoke --format 'State={{.State.Status}} ExitCode={{.State.ExitCode}} OOM={{.State.OOMKilled}}' || true
+            echo "--- docker logs ---"
+            docker logs kuma-smoke 2>&1 || true
+            echo "--- curl ---"
+            curl -sv --max-time 5 http://localhost:13001/api/health 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           for i in $(seq 1 20); do
             if curl -sf http://localhost:13001/api/health | grep -q '"ok":true'; then
               echo "healthcheck OK"
@@ -200,7 +217,6 @@ jobs:
             fi
             sleep 2
           done
-          echo "::error::容器健康检查未通过"
-          docker logs kuma-smoke
+          echo "::error::容器健康检查未通过，诊断信息已写入 job summary"
           docker rm -f kuma-smoke > /dev/null
           exit 1
