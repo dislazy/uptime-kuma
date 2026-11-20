@@ -96,7 +96,11 @@ curl localhost:3999/api/health    # {"ok":true,"version":"..."}
 - `setSettings` 官方签名是 `(data, currentPassword)`，不是 `(type, data)`；
 - RADIUS 的 User-Password 混淆与响应校验、franz-go 的
   `kgo.AllowAutoTopicCreation()` 无参、kafkajs `mechanism:"None"` 映射为不发 SASL，
-  细节见各 checker 文件头注释与 `SYNC.md`。
+  细节见各 checker 文件头注释与 `SYNC.md`；
+- `go_server/.gitignore` 的编译产物条目**必须用 `/go_server` 锚定**：不带 `/` 的
+  模式会匹配任意层级同名路径，曾把 `cmd/go_server/` 源码目录整个忽略，
+  导致 CI 上 checkout 后 `go build ./cmd/go_server` 秒失败（本地能编译因为
+  文件还在工作区，极具迷惑性）。新增源码目录后先 `git ls-files` 确认真的入库了。
 
 ## 同步官方新改动
 
