@@ -7,7 +7,7 @@
 
 | 项 | commit | 说明 |
 | --- | --- | --- |
-| 官方上游基线 | `160acac6` | `master` 分支，2026-11-19，*fix: disable multiple same params in api (#8216)* |
+| 官方上游基线 | `b0cd0f1d` | `master` 分支，2026-11-20，*fix(settings): use the server's 365-day default for keepDataPeriodDays (#8213)* |
 | go_server 基线 | `ab5bd237` | `main` 分支，go_server 全量首发（110 文件 / 29,389 行） |
 
 前端（Vue，仓库根目录的 `src/`）**零改动**，跟随官方 `master` 即可；
@@ -16,13 +16,13 @@
 ## 怎么找出官方有哪些新改动
 
 ```bash
-git fetch origin master
+git fetch upstream master        # upstream = louislam/uptime-kuma
 # 官方新提交一览
-git log 160acac6..origin/master --oneline
+git log b0cd0f1d..upstream/master --oneline
 # 只看后端相关文件（前端 UI 改动无需同步）
-git diff --stat 160acac6..origin/master -- server/ db/ src/mixins/socket.js src/components/notifications/ src/pages/EditMonitor.vue
+git diff --stat b0cd0f1d..upstream/master -- server/ db/ src/mixins/socket.js src/components/notifications/ src/pages/EditMonitor.vue
 # 看具体 diff
-git diff 160acac6..origin/master -- server/model/monitor.js
+git diff b0cd0f1d..upstream/master -- server/model/monitor.js
 ```
 
 ## 拿到 diff 后，按这张映射表找 go_server 里对应位置
@@ -42,7 +42,7 @@ git diff 160acac6..origin/master -- server/model/monitor.js
 
 ## 同步流程建议
 
-1. `git log 160acac6..origin/master --oneline` 圈出范围，按映射表分类；
+1. `git log b0cd0f1d..upstream/master --oneline` 圈出范围，按映射表分类；
 2. 逐条改 go_server，跑 `go build ./... && go vet ./... && go test ./...`；
 3. 有 socket 协议改动的，务必用 `socket.io-client@4` 实连验证（curl 只能验 REST）；
 4. 更新本文件两个基线 commit 到最新值，一起提交。
@@ -52,3 +52,4 @@ git diff 160acac6..origin/master -- server/model/monitor.js
 | 日期 | 官方基线 | go_server 提交 | 备注 |
 | --- | --- | --- | --- |
 | 2026-11-19 | `160acac6` | `ab5bd237` | 首次基线 |
+| 2026-11-21 | `b0cd0f1d` | 见 main | 3 个上游提交：加泰罗尼亚语言、依赖更新（纯前端，合并即得）；keepDataPeriodDays 修复 → go_server 同步：settings 种子 180→365、prune 改为跟随 UI 设置（缺失/解析失败回落 365，<1 禁用清理，官方 clear-old-data.js 语义），并补上此前缺失的 heartbeat 过期清理（Go 侧原本只清聚合表，heartbeat 无限增长） |

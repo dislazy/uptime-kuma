@@ -96,7 +96,7 @@ func Load() *Config {
 	c.DemoMode = *demo || envBool("UPTIME_KUMA_DEMO")
 
 	c.MaxConcurrentChecks = firstPositive(*maxChecks, envInt("UPTIME_KUMA_MAX_CONCURRENT_CHECKS"), 20)
-	c.KeepHeartbeatDays = firstPositive(*keepDays, envInt("UPTIME_KUMA_KEEP_HEARTBEAT_DAYS"), 180)
+	c.KeepHeartbeatDays = firstPositive(*keepDays, envInt("UPTIME_KUMA_KEEP_HEARTBEAT_DAYS"), 365)
 
 	return c
 }

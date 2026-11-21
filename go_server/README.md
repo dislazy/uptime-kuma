@@ -85,7 +85,7 @@ docker run -d --name uptime-kuma-go \
 | `UPTIME_KUMA_DISABLE_AUTH` | — | false | 关闭鉴权 |
 | `UPTIME_KUMA_WS_ORIGIN_CHECK` | — | cors-like | 设为 `bypass` 关闭 Origin 校验 |
 | `UPTIME_KUMA_MAX_CONCURRENT_CHECKS` | `-max-concurrent-checks` | 20 | 检查并发上限 |
-| `UPTIME_KUMA_KEEP_HEARTBEAT_DAYS` | `-keep-heartbeat-days` | 180 | 聚合数据保留天数 |
+| `UPTIME_KUMA_KEEP_HEARTBEAT_DAYS` | `-keep-heartbeat-days` | 365 | 数据保留天数（心跳 + 聚合；默认跟随 UI 设置 keepDataPeriodDays，显式配置时覆盖，<1 禁用清理） |
 | `UPTIME_KUMA_DEBUG` | `-debug` | false | debug 日志 |
 
 ---

@@ -6,7 +6,12 @@ import (
 	"time"
 
 	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
+	"github.com/dislazy/uptime-kuma/go_server/internal/store"
 )
+
+// defaultKeepPeriodDays 与官方 clear-old-data.js 的 DEFAULT_KEEP_PERIOD 一致。
+// keepDataPeriodDays 设置缺失 / 解析失败时都回落到它（官方同款行为）。
+const defaultKeepPeriodDays = 365
 
 // sprintfRetry 生成重试中的提示文案，与官方 "... (retry 1/3)" 格式对齐。
 func sprintfRetry(msg string, retries, max int) string {
@@ -59,13 +64,24 @@ func (mgr *Manager) rollupOnce(ctx context.Context) {
 	}
 }
 
+// prune 清理超期数据，语义对齐官方 server/jobs/clear-old-data.js：
+//   - 保留天数优先取 UI 设置 keepDataPeriodDays（缺失/解析失败 → 365）；
+//   - 部署侧显式配置（-keep-heartbeat-days / 环境变量，>0）时覆盖 UI 设置；
+//   - 设置值 <1 表示禁用清理（官方同款：数据永不删除）；
+//   - 官方会删过期 heartbeat，这里同步补上（此前 Go 侧只清聚合表，heartbeat 无限增长）。
 func (mgr *Manager) prune(ctx context.Context, keepDays int) {
 	if keepDays <= 0 {
-		keepDays = 180
+		period := store.NewSettings(mgr.db).GetInt(ctx, "keepDataPeriodDays", defaultKeepPeriodDays)
+		if period < 1 {
+			logx.Infof("monitor", "数据保留天数 <1，已禁用数据清理")
+			return
+		}
+		keepDays = int(period)
 	}
 	now := time.Now().Unix()
+	heartbeatCutoff := store.FormatTime(time.Unix(now-int64(keepDays)*86400, 0))
 
-	// 分钟表只留 48 小时；小时表留 90 天；天表按 keepDays
+	// 分钟表只留 48 小时；小时表留 90 天；天表与 heartbeat 按 keepDays
 	targets := []struct {
 		table string
 		cut   int64
@@ -79,5 +95,11 @@ func (mgr *Manager) prune(ctx context.Context, keepDays int) {
 		if err := mgr.stats.Prune(ctx, t.table, t.cut); err != nil {
 			logx.Warnf("monitor", "清理 %s 失败: %v", t.table, err)
 		}
+	}
+
+	if _, err := mgr.db.Exec(ctx, "DELETE FROM heartbeat WHERE time < ?", heartbeatCutoff); err != nil {
+		logx.Warnf("monitor", "清理 heartbeat 失败: %v", err)
+	} else {
+		logx.Debugf("monitor", "已清理 %d 天前的数据", keepDays)
 	}
 }

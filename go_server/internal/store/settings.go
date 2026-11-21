@@ -230,7 +230,9 @@ func (s *Settings) SeedDefaults(ctx context.Context, timezone string) error {
 		typeName string
 	}{
 		"entryPage":          {"statusPage-default", "general"},
-		"keepDataPeriodDays": {180, "general"},
+		// 官方 DEFAULT_KEEP_PERIOD = 365（clear-old-data.js），
+		// 2026-11 上游 #8213 把前端显示兜底从 180 改为 365，这里同步对齐。
+		"keepDataPeriodDays": {365, "general"},
 		"serverTimezone":     {timezone, "general"},
 		"checkUpdate":        {true, "general"},
 		"checkBeta":          {false, "general"},
