@@ -8,10 +8,10 @@
 
 | 类别 | 官方总数 | Go 直接对齐 | 等价覆盖 | 缺失 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| REST 路由（生产挂载） | 40 | 34 | — | 6 | `/metrics` 鉴权、`/api/status-page/:slug/badge` 已对齐官方（2026-11-21 修复），见 §1.1 |
+| REST 路由（生产挂载） | 40 | 36 | — | 4 | `/metrics` 鉴权、状态页徽章、robots.txt、change-password 已对齐官方（2026-11-21），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
 | Socket 事件（客户端→服务端） | 76 | 71 | — | 5 | proxy/remote-browser 已补齐（2026-11-21）；缺失只剩 cloudflared×5（明确不做），见 §3 |
-| Socket 推送（服务端→客户端） | 23 | 17 | 3 | 3 | domainInfo 已补齐（2026-11-21，RDAP）；剩余缺失均无 UI 影响（importantHeartbeatList/refresh/initServerTimezone），见 §4 |
+| Socket 推送（服务端→客户端） | 23 | 19 | 3 | 1 | domainInfo/refresh/initServerTimezone 已补齐（2026-11-21）；仅剩 importantHeartbeatList（前端不监听），见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
 > better-auth 只计前端 `authClient.*` 实际调用的端点；socket 按注册名逐条计。
@@ -57,12 +57,10 @@
 | `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | ✅ 官方鉴权全链路（prometheusApiEnabled 门控 404 → disableAuth → apiKeysEnabled 时 Basic 密码字段=API key，否则用户名密码；E2E 验证 404/401/200/分支切换） |
 | `GET /upload/*`（静态） | server.js:354 | FileServer | ✓ |
 
-### 1.2 缺失（6 条）
+### 1.2 缺失（4 条）
 
 | 官方路由 | 官方位置 | 影响 | 补齐成本 |
 | --- | --- | --- | --- |
-| `GET /robots.txt` | server.js:317 | 搜索引擎抓取控制（跟随 `searchEngineIndex` 设置） | 极小 |
-| `GET /.well-known/change-password` | server.js:356 | 浏览器密码管理器跳转官方 wiki | 极小 |
 | `GET /api/openapi.json` | api-router.js:347 | OpenAPI 描述文件 | 中 |
 | `GET /api/docs` | api-router.js:351 | API 文档页，**前端 Settings→General 有链接**（General.vue:233），当前点击 404 | 中（依赖上一条） |
 | `ALL /mcp` | mcp-router.ts:74 | 上游新增的 MCP（AI 工具接入）端点，requireApiKey | 大（独立协议栈） |
@@ -169,8 +167,8 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `proxyList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，proxy CRUD 已补齐，见 §3.2） |
 | `remoteBrowserList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，remote-browser CRUD 已补齐，见 §3.2） |
 | `dockerHostList` / `maintenanceList` / `notificationList` / `statusPageList` / `monitorTypeList` / `stats` | ✅ | |
-| `refresh` | ❌ | 官方踢其它会话前先发 refresh（uptime-kuma-server.ts:594），Go 直接断开；被踢端少一次"强制刷新"体验 |
-| `initServerTimezone`（推送） | ❌ | 官方登录后若 `initServerTimezone` 设置未置位则推送该事件触发前端时区初始化弹窗（server.js:1562）；Go 实现了回包 handler 但从不主动推送，弹窗永不出现 |
+| `refresh` | ✅ | 2026-11-21 补齐：disconnectOtherSocketClients 与「启用鉴权」踢人前先发 refresh（前端 location.reload），对齐官方 disconnectAllSocketClients |
+| `initServerTimezone`（推送） | ✅ | 2026-11-21 补齐：登录后设置未置位则推送，前端回传浏览器时区并落库（server.js:1562 同语义） |
 | `avgPing` / `uptime` | n/a | 前端监听的遗留事件，**官方服务端同样从不推送** |
 | `tags`（Go 多出） | 额外 | Go 在标签变更后广播，前端无监听，无害 |
 
@@ -196,8 +194,8 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |
 | B6 | ~~`/api/status-page/:slug/badge`~~ | ✅ 2026-11-21 已补齐：整体徽章四态（Up/Degraded/Maintenance/N-A）官方同序判定，E2E 验证混合→黄 Degraded、全 UP→绿、坏 slug→灰 N/A |
 | B7 | ~~`domainInfo` + checkDomain（RDAP）~~ | ✅ 2026-11-21 已补齐：`internal/domainexpiry` 包（IANA rdap/dns.json 周缓存+settings 落库+官方 extra/rdap-dns.json 内嵌兜底）、checkDomain 四层校验错误 i18n、checkExpiry 一天缓存、domainExpiryNotifyDays 阈值通知、60 秒节流 domainInfo 推送。E2E 真打 Verisign RDAP，example.com 到期日逐秒一致；`.gov.cn` 无 RDAP 端点按官方报 no-rdap |
-| B8 | `/robots.txt`、`/.well-known/change-password` | 低影响 |
-| B9 | `refresh` / `initServerTimezone` 推送 | 体验细节（被踢端不自动刷新；时区初始化弹窗不出现） |
+| B8 | ~~`/robots.txt`、`/.well-known/change-password`~~ | ✅ 2026-11-21 已补齐：robots 跟随 searchEngineIndex（未开启全站禁抓、text/plain）、change-password 302 到官方 wiki |
+| B9 | ~~`refresh` / `initServerTimezone` 推送~~ | ✅ 2026-11-21 已补齐：首登推时区初始化、踢人前 refresh 让被踢端自动刷新；E2E 验证首登收到、二次登录不再推、被踢端收 refresh 后断开 |
 | B10 | `/mcp` | 上游新功能（AI 工具接入），独立协议栈，暂缓 |
 | B11 | `importantHeartbeatList` 推送 | 前端不消费，仅影响潜在移动端/API 消费者 |
 

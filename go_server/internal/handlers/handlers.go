@@ -189,6 +189,12 @@ func afterLogin(sock *socketio.Socket, d *Deps, user *auth.User) {
 	// 前端同样能处理，且省掉一次往返。
 	sendHeartbeatLists(ctx, sock, d, monitorList)
 	sock.Emit("stats", map[int64]any{})
+
+	// 首次使用：官方 afterLogin 询问浏览器时区（initServerTimezone 未初始化时）
+	if _, ok, _ := d.Set.Raw(ctx, "initServerTimezone"); !ok {
+		logx.Debugf("handler", "emit initServerTimezone")
+		sock.Emit("initServerTimezone")
+	}
 }
 
 // registerEvents 注册全部事件处理器。

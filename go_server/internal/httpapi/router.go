@@ -88,6 +88,10 @@ func Mount(mux *http.ServeMux, api *API) {
 	mux.HandleFunc("GET /api/health", api.handleHealth)
 	mux.HandleFunc("GET /metrics", api.handleMetrics)
 
+	// 非 /api 前缀的官方小路由
+	mux.HandleFunc("GET /robots.txt", api.handleRobotsTxt)
+	mux.HandleFunc("GET /.well-known/change-password", api.handleChangePasswordWellKnown)
+
 	// 上传文件（状态页图标等）
 	mux.Handle("GET /upload/", http.StripPrefix("/upload/", http.FileServer(http.Dir(api.Cfg.UploadDir))))
 

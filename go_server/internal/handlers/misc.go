@@ -421,6 +421,7 @@ func setSettings(c *Ctx) (any, error) {
 		current := c.Socket
 		c.Hub.Each(func(s *socketio.Socket) {
 			if s != current && s.UserID() == uid {
+				s.Emit("refresh")
 				s.Disconnect()
 			}
 		})
@@ -563,6 +564,8 @@ func initServerTimezone(c *Ctx) (any, error) {
 }
 
 // disconnectOtherSocketClients 踢掉同用户的其它连接。
+// disconnectOtherSocketClients 对齐官方 disconnectAllSocketClients：
+// 先推 refresh（前端 location.reload），再断开其它会话。
 func disconnectOtherSocketClients(c *Ctx) (any, error) {
 	if err := c.RequireLogin(); err != nil {
 		return nil, err
@@ -572,6 +575,7 @@ func disconnectOtherSocketClients(c *Ctx) (any, error) {
 	current := c.Socket
 	c.Hub.Each(func(s *socketio.Socket) {
 		if s != current && s.UserID() == uid {
+			s.Emit("refresh")
 			s.Disconnect()
 		}
 	})
