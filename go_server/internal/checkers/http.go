@@ -102,9 +102,17 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 		return r
 	}
 
-	// 响应体按需读取：只有需要做 keyword / json 断言时才读
-	needBody := m.Type == "keyword" || m.Type == "json-query" ||
-		m.Get("keyword") != "" || m.Get("json_path") != ""
+	// 响应体按需读取。**断言范围严格按监控类型**（官方 model/monitor.js）：
+	//
+	//	http        → 只看状态码
+	//	keyword     → 正文包含 keyword（invert_keyword 取反）
+	//	json-query  → json_path 求值后与 expected_value 比较
+	//
+	// 这里曾经写成"keyword/json_path 列非空就断言"，结果被官方 2.x 的默认值坑了：
+	// 前端给每个新监控都存 json_path="$"，于是所有普通 http 监控都被拿去
+	// 比较整份响应和空串，全部误判 DOWN（2026-11-21 线上事故）。
+	typ := m.Type
+	needBody := typ == "keyword" || typ == "json-query"
 
 	var body []byte
 	if needBody {
@@ -121,8 +129,9 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 		return finish(Result{Status: model.StatusDown, Msg: baseMsg, Ping: &ping})
 	}
 
-	// 2) keyword 断言
-	if keyword := m.Get("keyword"); keyword != "" {
+	// 2) keyword 断言（仅 keyword 类型）
+	if typ == "keyword" {
+		keyword := m.Get("keyword")
 		contains := strings.Contains(string(body), keyword)
 		matched := contains
 		if m.GetBool("invert_keyword") {
@@ -138,8 +147,9 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 		baseMsg += ", keyword is " + presentWord(contains)
 	}
 
-	// 3) JSON 断言
-	if path := m.Get("json_path"); path != "" {
+	// 3) JSON 断言（仅 json-query 类型）
+	if typ == "json-query" {
+		path := m.Get("json_path")
 		actual, err := evalJSONPath(body, path)
 		if err != nil {
 			return finish(Result{Status: model.StatusDown, Msg: baseMsg + ", " + err.Error(), Ping: &ping})

@@ -2,7 +2,11 @@ package checkers
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -10,7 +14,7 @@ import (
 	"time"
 
 	// SQL 驱动在此集中注册，新增一个数据库监控只需在这里加一行 import
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "github.com/sijms/go-ora/v2"
@@ -100,14 +104,95 @@ func mysqlDSN(connStr, passwordOverride string) (string, error) {
 	b.WriteString(")")
 	b.WriteString(u.Path)
 
-	// 查询参数原样透传（tls / charset / parseTime 等由用户自己控制）
+	// 查询参数原样透传（charset / parseTime 等由用户自己控制），
+	// 只有 mysql2 风格的 ssl 需要翻译成驱动的 tls。
 	q := u.Query()
+	if raw, ok := q["ssl"]; ok {
+		mode, err := mysqlTLSMode(raw)
+		if err != nil {
+			return "", err
+		}
+		q.Del("ssl")
+		if mode != "" {
+			q.Set("tls", mode)
+		}
+	}
 	if len(q) > 0 {
 		b.WriteString("?")
 		b.WriteString(q.Encode())
 	}
 
 	return b.String(), nil
+}
+
+// mysqlTLSChainOnly 是"只验证书链、不校验主机名"的 TLS profile 名。
+//
+// 官方用的 mysql2 里，主机名校验由 ssl.verifyIdentity 控制，而它默认是关闭的
+// （node_modules/mysql2/lib/base/connection.js: only verify hostname when
+// verifyIdentity is truthy）。也就是说 `ssl={"rejectUnauthorized":true}`
+// 的实际语义是"验证书链，但不比对域名"。
+//
+// 这在自定义域名的场景下很关键：TiDB Cloud 的证书是
+// *.ap-southeast-1.prod.aws.tidbcloud.com，而用户连的是自己的
+// tidb.songbo.fun（CNAME 过去），严格比对主机名会 x509 失败，
+// 官方却是通的（2026-11-21 线上对拍确认）。
+const mysqlTLSChainOnly = "kuma-mysql-chain-only"
+
+func init() {
+	mysql.RegisterTLSConfig(mysqlTLSChainOnly, &tls.Config{
+		// 链校验放在 VerifyConnection 里自己完成（不传 DNSName），
+		// 所以这里必须跳过 Go 的默认校验，否则又会回到主机名比对。
+		InsecureSkipVerify: true, //nolint:gosec // 语义见上，链仍然校验
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) == 0 {
+				return errors.New("tls: server did not present a certificate")
+			}
+			opts := x509.VerifyOptions{
+				Intermediates: x509.NewCertPool(),
+			}
+			for _, cert := range cs.PeerCertificates[1:] {
+				opts.Intermediates.AddCert(cert)
+			}
+			_, err := cs.PeerCertificates[0].Verify(opts)
+			return err
+		},
+	})
+}
+
+// mysqlTLSMode 把 mysql2 的 `?ssl=` 参数翻译成 go-sql-driver 的 `tls=` 取值。
+//
+// 官方连接串模板给的是 mysql2 写法，例如:
+//
+//	mysql://user:pass@host:4000/db?ssl={"rejectUnauthorized":true}
+//
+// go-sql-driver 不认识 ssl，会把它当未知参数丢掉，连接退化成明文。对
+// TiDB Cloud 这类强制 TLS 的库，症状是服务端直接回
+// "Connections using insecure transport are prohibited"（2026-11-21 线上）。
+//
+// 返回空串表示不启用 TLS。
+func mysqlTLSMode(values []string) (string, error) {
+	if len(values) == 0 {
+		return "", nil
+	}
+	raw := strings.TrimSpace(values[len(values)-1])
+	switch strings.ToLower(raw) {
+	case "", "false", "0":
+		return "", nil
+	case "true", "1":
+		return mysqlTLSChainOnly, nil
+	}
+
+	// 其余情况按 mysql2 的 JSON 形式解析：{"rejectUnauthorized":false}
+	var opts struct {
+		RejectUnauthorized *bool `json:"rejectUnauthorized"`
+	}
+	if err := json.Unmarshal([]byte(raw), &opts); err != nil {
+		return "", fmt.Errorf("invalid ssl option in connection string: %w", err)
+	}
+	if opts.RejectUnauthorized != nil && !*opts.RejectUnauthorized {
+		return "skip-verify", nil
+	}
+	return mysqlTLSChainOnly, nil
 }
 
 // applyMySQLPasswordOverride 在原生 DSN 上替换密码。

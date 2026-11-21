@@ -108,7 +108,7 @@ git log b0cd0f1d..master --oneline
 | 依赖升级（`package.json` / `package-lock.json`） | 一般不需要 | 除非影响前端构建或引入新的运行时约定 |
 | CI / release 脚本 | 不需要 | 本仓库用自己的 workflow |
 
-### 3.3 四个高频陷阱
+### 3.3 六个高频陷阱
 
 1. **`active || true` 类"官方 bug"要不要照抄？** 照抄。目标是行为等价，不是修上游 bug。修正会让前端在两种后端下表现不一致。历史上 proxy 的启用开关就是这种恒真表达式，Go 侧保留并写注释说明。
 2. **官方注释说"公开"的端点别自己加鉴权**。典型是 status page：官方就是公开访问的，加了登录门槛反而破坏嵌入场景。
@@ -120,6 +120,11 @@ git log b0cd0f1d..master --oneline
    - `VACUUM` 是 SQLite 专属（`shrinkDatabase` 要按 `DB.IsMySQL()` 分支，官方也是空操作）；
    - 派生表 `FROM (SELECT ...)` 必须有别名 → **1248**（`TestNoSQLiteOnlySQLInSources` 会扫）。
    **新增 SQL 后先跑 `go test ./internal/store/ -run TestNoSQLiteOnlySQLInSources`，涉及写路径再跑一次真库冒烟。**
+5. **监控类型决定"要不要做正文断言"**。官方的 `http` 只校验状态码，`keyword` 才查正文、`json-query` 才查 JSON 路径（`server/model/monitor.js`）。但官方 2.x 前端给**每个**监控都存了 `json_path = "$"`、`expected_value = NULL`，所以绝不能写成"列非空就断言"——那会把所有普通 http 监控判成 DOWN（2026-11-21 线上事故，`internal/checkers/http_test.go` 有回归测试）。同理，任何 `m.Get("xxx") != ""` 式的开关都要先问：官方是按**类型**分流，还是按**列值**分流？
+6. **"能连上库"不等于"和官方连得一样"**。2026-11-21 同一天踩了两个：
+   - MySQL 监控的连接串是 mysql2 写法（`?ssl={"rejectUnauthorized":true}`），go-sql-driver 不认 `ssl`。要翻译成 `tls`，且必须按 mysql2 的真实语义——`verifyIdentity` 默认关闭，`rejectUnauthorized` 只验证书链、**不比对主机名**，否则自定义域名（TiDB 的 `tidb.songbo.fun`）会 x509 失败；
+   - 通用 webhook 的请求体是 `{heartbeat, monitor, msg}`，不是 `{msg}`。只发 msg 时接收方会回 400 "Failed to parse JSON"。
+   **对拍方法：把官方用的 npm 包装到 /tmp 跑一遍同样参数，看它到底发什么、校验什么。**
 
 ---
 

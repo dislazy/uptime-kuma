@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/smtp"
@@ -501,37 +502,121 @@ type webhookProvider struct{}
 func (webhookProvider) Type() string { return "webhook" }
 
 func (webhookProvider) Send(ctx context.Context, cfg map[string]any, msg string) (string, error) {
-	target := cfgStr(cfg, "webhookURL")
+	return webhookProvider{}.SendMessage(ctx, cfg, Message{Msg: msg, Test: true})
+}
+
+// SendMessage 按官方向通用 webhook 投递。
+//
+// 官方的请求体是 `{heartbeat, monitor, msg}`（server/notification-providers/webhook.js），
+// 并且支持三种形态：
+//   - 默认：POST JSON，三者都带（测试投递时 heartbeat/monitor 为 null）
+//   - GET：把 msg / heartbeat / monitor 放进查询参数（对象需 JSON 序列化）
+//   - webhookContentType=form-data：multipart 的 data 字段放整份 JSON
+//   - webhookContentType=custom：用 webhookCustomBody 模板渲染
+//
+// 之前这里只发 `{"msg": ...}`，接收方按官方结构取字段会直接失败
+// （线上表现是 HTTP 400 "Failed to parse JSON"）。
+func (webhookProvider) SendMessage(ctx context.Context, cfg map[string]any, m Message) (string, error) {
+	target := strings.TrimSpace(cfgStr(cfg, "webhookURL"))
 	if target == "" {
-		return "", fmt.Errorf("webhookURL 不能为空")
+		return "", fmt.Errorf("Webhook URL is required")
+	}
+	if _, err := url.Parse(target); err != nil {
+		return "", fmt.Errorf("Invalid Webhook URL: %w", err)
 	}
 
 	method := strings.ToUpper(firstNonEmpty(cfgStr(cfg, "httpMethod"), "POST"))
+
 	headers := map[string]string{}
 	if raw := cfgStr(cfg, "webhookAdditionalHeaders"); raw != "" {
 		var h map[string]string
-		if err := json.Unmarshal([]byte(raw), &h); err == nil {
-			headers = h
+		if err := json.Unmarshal([]byte(raw), &h); err != nil {
+			return "", fmt.Errorf("Additional Headers is not a valid JSON")
 		}
+		headers = h
 	}
 
-	// 自定义请求体：支持 {{ msg }} 占位
-	body := cfgStr(cfg, "webhookCustomBody")
-	if body != "" {
-		body = strings.ReplaceAll(body, "{{ msg }}", msg)
-		contentType := firstNonEmpty(cfgStr(cfg, "webhookContentType"), "application/json")
-		_, _, err := doRequest(ctx, method, target, contentType, []byte(body), headers)
-		return "Sent Successfully.", err
+	// 测试投递时与官方一致：heartbeat / monitor 都是 null
+	var heartbeatJSON any
+	if m.Monitor != nil {
+		heartbeatJSON = m.Beat.JSON()
 	}
+	monitorJSON := g4MonitorMap(m)
 
-	payload := map[string]any{"msg": msg}
 	if method == http.MethodGet {
-		_, _, err := doRequest(ctx, method, target, "", nil, headers)
-		return "Sent Successfully.", err
+		u, err := url.Parse(target)
+		if err != nil {
+			return "", fmt.Errorf("Invalid Webhook URL: %w", err)
+		}
+		q := u.Query()
+		q.Set("msg", m.Msg)
+		if heartbeatJSON != nil {
+			if raw, err := json.Marshal(heartbeatJSON); err == nil {
+				q.Set("heartbeat", string(raw))
+			}
+		}
+		if monitorJSON != nil {
+			if raw, err := json.Marshal(monitorJSON); err == nil {
+				q.Set("monitor", string(raw))
+			}
+		}
+		u.RawQuery = q.Encode()
+
+		code, body, err := httpDoRaw(ctx, http.MethodGet, u.String(), "", nil, headers)
+		if err != nil {
+			return "", err
+		}
+		if err := expectOK("Webhook", code, body); err != nil {
+			return "", err
+		}
+		return "Sent Successfully.", nil
 	}
 
-	_, _, err := postJSON(ctx, target, payload, headers)
-	return "Sent Successfully.", err
+	payload := map[string]any{
+		"heartbeat": heartbeatJSON,
+		"monitor":   monitorJSON,
+		"msg":       m.Msg,
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfgStr(cfg, "webhookContentType"))) {
+	case "form-data":
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return "", err
+		}
+		if err := w.WriteField("data", string(raw)); err != nil {
+			return "", err
+		}
+		if err := w.Close(); err != nil {
+			return "", err
+		}
+		code, body, err := httpDoRaw(ctx, http.MethodPost, target, w.FormDataContentType(), buf.Bytes(), headers)
+		if err != nil {
+			return "", err
+		}
+		if err := expectOK("Webhook", code, body); err != nil {
+			return "", err
+		}
+		return "Sent Successfully.", nil
+
+	case "custom":
+		// 官方用 Liquid 渲染 webhookCustomBody；这里复用已有的模板子集
+		// （{{ msg }} / {{ name }} / {{ status }} / {{ monitorJSON.x }} ...）。
+		// 自定义模板基本都是 JSON，按 application/json 发出，接收方才能直接解析。
+		body := g1RenderTemplate(cfgStr(cfg, "webhookCustomBody"), m)
+		code, respBody, err := httpDoRaw(ctx, http.MethodPost, target, "application/json", []byte(body), headers)
+		if err != nil {
+			return "", err
+		}
+		if err := expectOK("Webhook", code, respBody); err != nil {
+			return "", err
+		}
+		return "Sent Successfully.", nil
+	}
+
+	return postJSONOK(ctx, "Webhook", target, payload, headers)
 }
 
 // ---------------- SMTP ----------------

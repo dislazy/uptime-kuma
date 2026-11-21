@@ -69,10 +69,14 @@ func (api *API) handleStatusPageHeartbeat(w http.ResponseWriter, r *http.Request
 			continue
 		}
 
-		// 官方按时间倒序取 100 条后 reverse 成正序
+		// 顺序必须是**正序**（老 → 新）：官方 status-page-router.js 里
+		// 按 time DESC 取 100 条后调用 .reverse()，前端统一用
+		// `beats[beats.length - 1]` 当最新一条（src/mixins/socket.js、beat-state.ts）。
+		//
+		// 这里曾经又反了一次，结果前端把 100 条里**最旧**的那条当成当前状态：
+		// 服务其实早就恢复 UP，页面却一直显示几小时前的 DOWN（2026-11-21 线上）。
 		list := make([]map[string]any, 0, len(beats))
-		for i := len(beats) - 1; i >= 0; i-- {
-			b := beats[i]
+		for _, b := range beats {
 			list = append(list, map[string]any{
 				"status": b.Status,
 				"time":   b.Time,

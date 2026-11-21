@@ -81,6 +81,8 @@ func (h *HeartbeatStore) flushLoop(ctx context.Context) {
 		}
 		if err := h.writeBatch(ctx, batch); err != nil {
 			logx.Errorf("heartbeat", "批量写入失败: %v", err)
+		} else {
+			logFlushed(batch)
 		}
 		batch = batch[:0]
 	}
@@ -135,6 +137,15 @@ func (h *HeartbeatStore) writeBatch(ctx context.Context, beats []model.Beat) err
 		}
 		return nil
 	})
+}
+
+// logFlushed 在 debug 模式下报告批量写入结果，便于排查"检查成功但看不到心跳"。
+func logFlushed(beats []model.Beat) {
+	if len(beats) == 0 {
+		return
+	}
+	logx.Debugf("heartbeat", "批量写入 %d 条心跳（monitor #%d time=%s）",
+		len(beats), beats[0].MonitorID, beats[0].Time)
 }
 
 func beatToMap(b model.Beat) map[string]any {

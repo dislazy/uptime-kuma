@@ -25,9 +25,12 @@ func newTestAPI(t *testing.T) *API {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return &API{
-		DB:  db,
-		Mon: store.NewMonitorStore(db),
-		Set: store.NewSettings(db),
+		DB:         db,
+		Mon:        store.NewMonitorStore(db),
+		Beat:       store.NewHeartbeatStore(db),
+		Stat:       store.NewStatsStore(db),
+		Set:        store.NewSettings(db),
+		StatusPage: store.NewStatusPageStore(db),
 	}
 }
 
