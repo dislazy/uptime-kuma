@@ -206,7 +206,10 @@ func TestDaysRemainingTruncation(t *testing.T) {
 	}{
 		{25 * time.Hour, 1},
 		{23 * time.Hour, 0},
-		{30 * 24 * time.Hour, 29}, // 执行耗时会少一瞬 → 29（dayjs 同语义：已满整天）
+		// 边界值不稳（时钟精度不同，整 30 天可能恰好截到 30 或 29），
+		// 用偏离边界 1 小时的样例验证「已满整天才计入」的语义
+		{29*24*time.Hour + time.Hour, 29},
+		{30*24*time.Hour + time.Hour, 30},
 		{-5 * time.Hour, 0}, // 已过期 → 负但截断为 0
 		{-72 * time.Hour, -3},
 	}

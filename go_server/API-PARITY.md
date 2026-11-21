@@ -8,7 +8,7 @@
 
 | 类别 | 官方总数 | Go 直接对齐 | 等价覆盖 | 缺失 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| REST 路由（生产挂载） | 40 | 36 | — | 4 | `/metrics` 鉴权、状态页徽章、robots.txt、change-password 已对齐官方（2026-11-21），见 §1.1 |
+| REST 路由（生产挂载） | 40 | 38 | — | 2 | `/metrics` 鉴权、状态页徽章、robots.txt、change-password、openapi.json、/api/docs 已对齐官方（2026-11-21），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
 | Socket 事件（客户端→服务端） | 76 | 71 | — | 5 | proxy/remote-browser 已补齐（2026-11-21）；缺失只剩 cloudflared×5（明确不做），见 §3 |
 | Socket 推送（服务端→客户端） | 23 | 19 | 3 | 1 | domainInfo/refresh/initServerTimezone 已补齐（2026-11-21）；仅剩 importantHeartbeatList（前端不监听），见 §4 |
@@ -57,12 +57,10 @@
 | `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | ✅ 官方鉴权全链路（prometheusApiEnabled 门控 404 → disableAuth → apiKeysEnabled 时 Basic 密码字段=API key，否则用户名密码；E2E 验证 404/401/200/分支切换） |
 | `GET /upload/*`（静态） | server.js:354 | FileServer | ✓ |
 
-### 1.2 缺失（4 条）
+### 1.2 缺失（2 条）
 
 | 官方路由 | 官方位置 | 影响 | 补齐成本 |
 | --- | --- | --- | --- |
-| `GET /api/openapi.json` | api-router.js:347 | OpenAPI 描述文件 | 中 |
-| `GET /api/docs` | api-router.js:351 | API 文档页，**前端 Settings→General 有链接**（General.vue:233），当前点击 404 | 中（依赖上一条） |
 | `ALL /mcp` | mcp-router.ts:74 | 上游新增的 MCP（AI 工具接入）端点，requireApiKey | 大（独立协议栈） |
 | `GET /screenshots/*`（静态） | uptime-kuma-server.ts:230 | real-browser 截图外链 | n/a：Go 的 real-browser 走本地 Chromium / 远程 Playwright，均不落截图产物（已知等价偏差） |
 
@@ -191,7 +189,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B2 | ~~Proxy 管理（socket 事件 + checker 消费 `proxy_id`）~~ | ✅ 2026-11-21 已补齐：`addProxy`/`deleteProxy` + 真实 `proxyList`；HTTP 家族探测按 `proxy_id` 走 http/https/socks5/socks5h/socks/socks4 六协议（socks-proxy-agent 的 lookup 语义：socks5 本地解析、socks5h/socks 远程解析、socks4 仅 IPv4）；官方 `active \|\| true` 恒真语义保持一致（前端"启用"开关官方本就不生效）。E2E 验证：建代理→监控心跳走代理（代理计数增长）→删代理→心跳回退直连→applyExisting 批量指派 |
 | B3 | ~~Remote Browser 管理（3 事件）~~ | ✅ 2026-11-21 已补齐：`addRemoteBrowser`/`deleteRemoteBrowser`/`testRemoteBrowser` + 真实 `remoteBrowserList`；real-browser 监控可连远程 Playwright 端点（browserless / launchServer），Go 自实现协议极小客户端，E2E 走真 Chromium 验证 msg=200 |
 | B4 | Cloudflared Tunnel（5 事件） | **明确不做**（2026-11-21 决策）：部署机有公网直连，隧道无使用场景；官方实现还要管理 cloudflared 二进制进程，收益/成本比最低。Cloudflared 设置页在 Go 后端下不可用 |
-| B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |
+| B5 | ~~`/api/docs` + `/api/openapi.json`~~ | ✅ 2026-11-21 已补齐：OpenAPI 3.1.0 文档（get_info/get_monitors + Error/Info/Tag/Monitor schema + bearerAuth，对齐官方 zod-openapi 产物）、Scalar 文档页（CDN 挂载 + data-url）；门禁照官方 requireApiAccess/requireDocsAccess（apiEnabled 403、无凭证 401，JSON/纯文本两种错误形态）；顺带对齐 /api/info 的 runtime 与 `+08:00` 时区偏移、tags 补 monitor_id |
 | B6 | ~~`/api/status-page/:slug/badge`~~ | ✅ 2026-11-21 已补齐：整体徽章四态（Up/Degraded/Maintenance/N-A）官方同序判定，E2E 验证混合→黄 Degraded、全 UP→绿、坏 slug→灰 N/A |
 | B7 | ~~`domainInfo` + checkDomain（RDAP）~~ | ✅ 2026-11-21 已补齐：`internal/domainexpiry` 包（IANA rdap/dns.json 周缓存+settings 落库+官方 extra/rdap-dns.json 内嵌兜底）、checkDomain 四层校验错误 i18n、checkExpiry 一天缓存、domainExpiryNotifyDays 阈值通知、60 秒节流 domainInfo 推送。E2E 真打 Verisign RDAP，example.com 到期日逐秒一致；`.gov.cn` 无 RDAP 端点按官方报 no-rdap |
 | B8 | ~~`/robots.txt`、`/.well-known/change-password`~~ | ✅ 2026-11-21 已补齐：robots 跟随 searchEngineIndex（未开启全站禁抓、text/plain）、change-password 302 到官方 wiki |

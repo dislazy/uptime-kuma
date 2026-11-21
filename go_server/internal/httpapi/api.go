@@ -15,7 +15,9 @@ package httpapi
 // 所以 "Bearer <key>" 与裸 key 两种写法都支持。
 
 import (
+	"fmt"
 	"net/http"
+	"runtime"
 	"strings"
 	"time"
 
@@ -71,8 +73,6 @@ func (a *API) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
-	_, offset := now.Zone()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true,
 		"info": map[string]any{
@@ -80,11 +80,26 @@ func (a *API) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 			"latestVersion":        version.Version,
 			"primaryBaseURL":       a.Set.GetString(r.Context(), "primaryBaseURL", ""),
 			"serverTimezone":       a.Set.GetString(r.Context(), "serverTimezone", "UTC"),
-			"serverTimezoneOffset": offset / 60,
+			"serverTimezoneOffset": timezoneOffset(),
 			"isContainer":          true,
 			"dbType":               "sqlite",
+			"runtime": map[string]any{
+				"platform": runtime.GOOS,
+				"arch":     runtime.GOARCH,
+			},
 		},
 	})
+}
+
+// timezoneOffset 对齐官方 dayjs().format("Z")：+08:00 形式。
+func timezoneOffset() string {
+	_, secs := time.Now().Zone()
+	sign := "+"
+	if secs < 0 {
+		sign = "-"
+		secs = -secs
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, secs/3600, (secs%3600)/60)
 }
 
 // handleAPIMonitors 对应 GET /api/monitors，返回官方 toCompactMonitor 形状：
@@ -146,10 +161,11 @@ func (a *API) handleAPIMonitors(w http.ResponseWriter, r *http.Request) {
 		tags := make([]map[string]any, 0, len(m.Tags))
 		for _, t := range m.Tags {
 			tags = append(tags, map[string]any{
-				"tag_id": t.TagID,
-				"name":   t.Name,
-				"color":  t.Color,
-				"value":  t.Value,
+				"tag_id":     t.TagID,
+				"monitor_id": m.ID,
+				"name":       t.Name,
+				"color":      t.Color,
+				"value":      t.Value,
 			})
 		}
 
