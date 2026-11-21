@@ -324,6 +324,23 @@ func (s *Service) passwordHash(ctx context.Context, userID string) (string, erro
 	return row.Str("password"), nil
 }
 
+// CheckUsernamePassword 对齐官方 better-auth.ts checkPassword(username, password)：
+// 按用户名查 better_auth_user → credential 哈希校验。
+// 供 /metrics 等处 Basic Auth 使用（官方 userAuthorizer 的底层）。
+func (s *Service) CheckUsernamePassword(ctx context.Context, username, password string) bool {
+	row, err := s.db.QueryOne(ctx,
+		"SELECT id FROM better_auth_user WHERE username = ?", username)
+	if err != nil || row == nil {
+		return false
+	}
+	hash, err := s.passwordHash(ctx, row.Str("id"))
+	if err != nil || hash == "" {
+		return false
+	}
+	ok, err := VerifyPassword(password, hash)
+	return err == nil && ok
+}
+
 // migrateLegacyUser 把旧 user 表里的账号迁移到 better-auth 表。
 func (s *Service) migrateLegacyUser(ctx context.Context, username, password string) (*User, error) {
 	row, err := s.db.QueryOne(ctx,

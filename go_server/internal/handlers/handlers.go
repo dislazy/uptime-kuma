@@ -234,6 +234,9 @@ func registerEvents(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.On("addTag", wrap(addTag))
 	sock.On("editTag", wrap(editTag))
 	sock.On("deleteTag", wrap(deleteTag))
+	sock.On("addMonitorTag", wrap(addMonitorTag))
+	sock.On("editMonitorTag", wrap(editMonitorTag))
+	sock.On("deleteMonitorTag", wrap(deleteMonitorTag))
 
 	// —— 维护窗口 ——
 	sock.On("addMaintenance", wrap(addMaintenance))

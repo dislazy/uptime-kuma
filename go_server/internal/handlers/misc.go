@@ -285,6 +285,86 @@ func deleteTag(c *Ctx) (any, error) {
 	return map[string]any{"ok": true, "msg": "successDeleted", "msgi18n": true}, nil
 }
 
+// addMonitorTag 对应官方 server.js addMonitorTag（server.js:1012）：
+// 给已有监控加标签，回包 successAdded。
+func addMonitorTag(c *Ctx) (any, error) {
+	if err := c.RequireLogin(); err != nil {
+		return nil, err
+	}
+
+	var tagID, monitorID int64
+	if err := c.Arg(0, &tagID); err != nil {
+		return nil, err
+	}
+	if err := c.Arg(1, &monitorID); err != nil {
+		return nil, err
+	}
+	var value string
+	_ = c.OptArg(2, &value)
+
+	if _, err := c.DB.Exec(c.Ctx,
+		"INSERT INTO monitor_tag (tag_id, monitor_id, value) VALUES (?, ?, ?)",
+		tagID, monitorID, value); err != nil {
+		return nil, err
+	}
+	// 官方随后增量推送该监控；Go 用全量 monitorList 广播等价覆盖
+	broadcastMonitorList(c.Deps)
+	return map[string]any{"ok": true, "msg": "successAdded", "msgi18n": true}, nil
+}
+
+// editMonitorTag 对应官方 server.js editMonitorTag（server.js:1034）。
+func editMonitorTag(c *Ctx) (any, error) {
+	if err := c.RequireLogin(); err != nil {
+		return nil, err
+	}
+
+	var tagID, monitorID int64
+	if err := c.Arg(0, &tagID); err != nil {
+		return nil, err
+	}
+	if err := c.Arg(1, &monitorID); err != nil {
+		return nil, err
+	}
+	var value string
+	if err := c.Arg(2, &value); err != nil {
+		return nil, err
+	}
+
+	if _, err := c.DB.Exec(c.Ctx,
+		"UPDATE monitor_tag SET value = ? WHERE tag_id = ? AND monitor_id = ?",
+		value, tagID, monitorID); err != nil {
+		return nil, err
+	}
+	broadcastMonitorList(c.Deps)
+	return map[string]any{"ok": true, "msg": "successEdited", "msgi18n": true}, nil
+}
+
+// deleteMonitorTag 对应官方 server.js deleteMonitorTag（server.js:1056）：
+// 前端 TagEditDialog / TagsManager 在用，value 参与匹配。
+func deleteMonitorTag(c *Ctx) (any, error) {
+	if err := c.RequireLogin(); err != nil {
+		return nil, err
+	}
+
+	var tagID, monitorID int64
+	if err := c.Arg(0, &tagID); err != nil {
+		return nil, err
+	}
+	if err := c.Arg(1, &monitorID); err != nil {
+		return nil, err
+	}
+	var value string
+	_ = c.OptArg(2, &value)
+
+	if _, err := c.DB.Exec(c.Ctx,
+		"DELETE FROM monitor_tag WHERE tag_id = ? AND monitor_id = ? AND value = ?",
+		tagID, monitorID, value); err != nil {
+		return nil, err
+	}
+	broadcastMonitorList(c.Deps)
+	return map[string]any{"ok": true, "msg": "successDeleted", "msgi18n": true}, nil
+}
+
 func broadcastTags(d *Deps) {
 	list, err := d.Tag.List(context.Background())
 	if err != nil {

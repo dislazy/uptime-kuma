@@ -8,9 +8,9 @@
 
 | 类别 | 官方总数 | Go 直接对齐 | 等价覆盖 | 缺失 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| REST 路由（生产挂载） | 40 | 32 | — | 7 | 含 1 条行为偏差（`/metrics` 鉴权），见 §1.2 与 §5-A1 |
+| REST 路由（生产挂载） | 40 | 33 | — | 7 | `/metrics` 鉴权已对齐官方（2026-11-21 修复），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
-| Socket 事件（客户端→服务端） | 76 | 63 | — | 13 | 缺失集中在 monitorTag / proxy / remote-browser / cloudflared，见 §3 |
+| Socket 事件（客户端→服务端） | 76 | 66 | — | 10 | 缺失集中在 proxy / remote-browser / cloudflared，见 §3 |
 | Socket 推送（服务端→客户端） | 23 | 15 | 3 | 5 | 前端 UI 实际受影响的只有 certInfo / domainInfo，见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
@@ -54,7 +54,7 @@
 | `GET /status/:slug`（HTML） | status-page-router.js:16 | SPA 回退 index.html | 官方同源逻辑（也回 index.html） |
 | `GET /status` / `GET /status-page` | status-page-router.js:28/33 | SPA 回退 | ✓ |
 | `GET /status/:slug/rss` | status-page-router.js:22 | `httpapi.handleStatusPageRSS` | ✓ |
-| `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | **行为偏差，见 §5-A1（鉴权缺失）** |
+| `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | ✅ 官方鉴权全链路（prometheusApiEnabled 门控 404 → disableAuth → apiKeysEnabled 时 Basic 密码字段=API key，否则用户名密码；E2E 验证 404/401/200/分支切换） |
 | `GET /upload/*`（静态） | server.js:354 | FileServer | ✓ |
 
 ### 1.2 缺失（7 条）
@@ -113,9 +113,9 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `monitorImportantHeartbeatListCount` | ✅ | |
 | `monitorImportantHeartbeatListPaged` | ✅ | |
 | `getTags` / `addTag` / `editTag` / `deleteTag` | ✅ | |
-| `addMonitorTag` | ❌ | **前端在用**（TagEditDialog.vue:459 / TagsManager.vue:464，对已有监控单独改标签时挂起无响应） |
-| `deleteMonitorTag` | ❌ | **前端在用**（TagEditDialog.vue:471） |
-| `editMonitorTag` | ❌ | 官方有注册但前端不调用，n/a |
+| `addMonitorTag` | ✅ | 2026-11-21 补齐；INSERT + 全量 monitorList 广播（官方为增量推送，等价），回包 `successAdded` |
+| `deleteMonitorTag` | ✅ | 2026-11-21 补齐；value 参与匹配，回包 `successDeleted` |
+| `editMonitorTag` | ✅ | 2026-11-21 补齐（官方有注册、前端暂不调用） |
 | `getSettings` / `setSettings` | ✅ | |
 | `addNotification` / `deleteNotification` / `testNotification` | ✅ | |
 | `checkApprise` | ✅ | |
@@ -174,12 +174,12 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 
 ## 5. 已知偏差分级汇总
 
-### A. 安全/正确性（建议尽快处理）
+### A. 安全/正确性 —— 2026-11-21 已全部修复 ✅
 
-| # | 偏差 | 官方行为 | Go 行为 |
-| --- | --- | --- | --- |
-| A1 | `/metrics` 鉴权 | `prometheusApiEnabled !== true` → 404；再过 apiAuth（Basic Auth 或 API Key，server.js:329-344 / auth.ts:182） | **无开关、无鉴权**，任何能访问端口的人可读监控数量/连接数/运行时长 |
-| A2 | 标签编辑挂起 | `addMonitorTag` / `deleteMonitorTag` 正常 | 事件未注册，前端对话框 await 永不返回 |
+| # | 偏差 | 状态 |
+| --- | --- | --- |
+| A1 | `/metrics` 鉴权：`prometheusApiEnabled !== true` → 404；disableAuth 放行；apiKeysEnabled 时 Basic Auth 密码字段=API key（走 apiRateLimiter 60/min），否则用户名密码（走 loginRateLimiter 10/60s 按 IP），完全对齐 server.js:329 + auth.ts:182 | ✅ E2E 验证 404→401→200→key 分支切换 |
+| A2 | `addMonitorTag` / `editMonitorTag` / `deleteMonitorTag` 事件注册，回包 successAdded/Edited/Deleted | ✅ E2E 验证 |
 
 ### B. 功能缺失（用户可感，按影响排序）
 
@@ -219,8 +219,10 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 以下链路在本地真机 E2E 走通（非静态比对）：
 
 setup → sign-in → get-session → change-password → 重登录；
+`/metrics` 官方鉴权全链路（prometheusApiEnabled 门控 → Basic Auth 两分支 → apiKey 切换）；
+monitorTag 三事件（add/edit/delete + 回包文案）；
 2FA enable/verify/disable；API Key add/list/delete（含 legacy key）；
-REST `/api/info` `/api/monitors`（200/401/403/429）；badge 六 metric；状态页四端点；push 监控；`/metrics`（无鉴权，即 A1）。
+REST `/api/info` `/api/monitors`（200/401/403/429）；badge 六 metric；状态页四端点；push 监控；`/metrics` 全鉴权链（404/401/200/apiKey 分支，A1 修复验证）。
 
 ---
 

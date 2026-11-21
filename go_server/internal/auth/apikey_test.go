@@ -150,7 +150,7 @@ func TestLegacyAPIKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := svc.db.Insert(ctx, "api_key", map[string]any{
-		"key":   string(hash),
+		"key":     string(hash),
 		"name":    "legacy",
 		"user_id": 1,
 		"active":  1,
@@ -198,5 +198,29 @@ func TestChangePassword(t *testing.T) {
 	}
 	if _, _, err := svc.Login(ctx, "admin", "password123", "ip", "ua", false); err == nil {
 		t.Fatal("旧密码不应再能登录")
+	}
+}
+
+// TestCheckUsernamePassword 对齐官方 better-auth.ts checkPassword：
+// 按用户名查库 + credential 哈希校验，用于 /metrics Basic Auth 分支。
+func TestCheckUsernamePassword(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthService(t)
+
+	if _, err := svc.CreateUser(ctx, "admin", "password123"); err != nil {
+		t.Fatalf("创建用户失败: %v", err)
+	}
+
+	if !svc.CheckUsernamePassword(ctx, "admin", "password123") {
+		t.Fatal("正确用户名密码应通过")
+	}
+	if svc.CheckUsernamePassword(ctx, "admin", "wrong") {
+		t.Fatal("错误密码应拒绝")
+	}
+	if svc.CheckUsernamePassword(ctx, "nobody", "password123") {
+		t.Fatal("不存在的用户应拒绝")
+	}
+	if svc.CheckUsernamePassword(ctx, " admin ", "password123") {
+		t.Fatal("官方 checkPassword 不做 trim，带空格的用户名应按原样匹配失败")
 	}
 }

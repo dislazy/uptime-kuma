@@ -13,6 +13,7 @@ import (
 	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
 	"github.com/dislazy/uptime-kuma/go_server/internal/config"
 	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
+	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 	"github.com/dislazy/uptime-kuma/go_server/internal/maintenance"
 	"github.com/dislazy/uptime-kuma/go_server/internal/monitor"
 	"github.com/dislazy/uptime-kuma/go_server/internal/store"
@@ -137,6 +138,51 @@ func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// 官方 server.js:329-340：prometheusApiEnabled !== true 时直接 404（不是 403）
+	if !a.Set.GetBool(ctx, "prometheusApiEnabled", false) {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 官方 auth.ts apiAuth：disableAuth 开启则放行；否则 Basic Auth
+	if !a.Set.GetBool(ctx, "disableAuth", false) {
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted", charset="UTF-8"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if a.Set.GetBool(ctx, "apiKeysEnabled", false) {
+			// 官方 apiAuthorizer：password 字段即 API key（用户名不校验），
+			// 走 apiRateLimiter（60/min 全局）
+			if !apiRateLimiter.allow("") {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if _, err := a.Auth.VerifyAPIKey(ctx, pass); err != nil {
+				logx.Warnf("httpapi", "API basic auth 失败: 无效 API Key")
+				w.Header().Set("WWW-Authenticate", `Basic realm="Restricted", charset="UTF-8"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		} else {
+			// 官方 userAuthorizer：用户名 + 密码，走 loginRateLimiter（10/60s 按 IP）
+			if !loginLimiter.allow(a.clientIP(r)) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if !a.Auth.CheckUsernamePassword(ctx, user, pass) {
+				logx.Warnf("httpapi", "basic auth 失败: 用户名或密码错误")
+				w.Header().Set("WWW-Authenticate", `Basic realm="Restricted", charset="UTF-8"`)
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+	}
+
 	// P2 会用 prometheus/client_golang 输出完整指标；这里先给出最小可用集合。
 	var b strings.Builder
 	b.WriteString("# HELP gokuma_monitors_active 启用的监控数量\n")
