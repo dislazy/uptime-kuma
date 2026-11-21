@@ -15,6 +15,7 @@ package httpapi
 // 所以 "Bearer <key>" 与裸 key 两种写法都支持。
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -72,23 +73,27 @@ func (a *API) handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 	if !a.requireAPIKey(w, r) {
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok": true,
-		"info": map[string]any{
-			"version":              version.Version,
-			"latestVersion":        version.Version,
-			"primaryBaseURL":       a.Set.GetString(r.Context(), "primaryBaseURL", ""),
-			"serverTimezone":       a.Set.GetString(r.Context(), "serverTimezone", "UTC"),
-			"serverTimezoneOffset": timezoneOffset(),
-			"isContainer":          true,
-			"dbType":               "sqlite",
-			"runtime": map[string]any{
-				"platform": runtime.GOOS,
-				"arch":     runtime.GOARCH,
-			},
-		},
+		"ok":   true,
+		"info": a.infoPayload(r.Context()),
 	})
+}
+
+// infoPayload 是官方 getInfo() 的等价实现，REST 与 MCP 的 get_info 工具共用。
+func (a *API) infoPayload(ctx context.Context) map[string]any {
+	return map[string]any{
+		"version":              version.Version,
+		"latestVersion":        version.Version,
+		"primaryBaseURL":       a.Set.GetString(ctx, "primaryBaseURL", ""),
+		"serverTimezone":       a.Set.GetString(ctx, "serverTimezone", "UTC"),
+		"serverTimezoneOffset": timezoneOffset(),
+		"isContainer":          true,
+		"dbType":               "sqlite",
+		"runtime": map[string]any{
+			"platform": runtime.GOOS,
+			"arch":     runtime.GOARCH,
+		},
+	}
 }
 
 // timezoneOffset 对齐官方 dayjs().format("Z")：+08:00 形式。
@@ -110,10 +115,20 @@ func (a *API) handleAPIMonitors(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := a.Mon.List(r.Context(), true)
+	monitors, err := a.compactMonitors(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"ok": false, "msg": "Failed to get the monitors"})
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "monitors": monitors})
+}
+
+// compactMonitors 是官方 getMonitorJSONList(null, true) 的等价实现，
+// REST 与 MCP 的 get_monitors 工具共用。
+func (a *API) compactMonitors(ctx context.Context) ([]map[string]any, error) {
+	list, err := a.Mon.List(ctx, true)
+	if err != nil {
+		return nil, err
 	}
 
 	children := map[int64][]int64{}
@@ -184,5 +199,5 @@ func (a *API) handleAPIMonitors(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "monitors": monitors})
+	return monitors, nil
 }

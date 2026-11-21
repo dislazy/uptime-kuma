@@ -97,6 +97,8 @@ func Mount(mux *http.ServeMux, api *API) {
 
 	// 需要 API Key 的 REST 接口（/api/info、/api/monitors）
 	MountAPIRoutes(mux, api)
+	// MCP（AI 工具接入，mcp-router.ts）：把上面两个无参数 GET 桥接成工具
+	MountMCPRoute(mux, api)
 	// 文档：OpenAPI 描述文件 + Scalar 文档页（api-router.js:347-351）
 	mux.HandleFunc("GET /api/openapi.json", api.handleOpenAPISpec)
 	mux.HandleFunc("GET /api/docs", api.handleAPIDocs)

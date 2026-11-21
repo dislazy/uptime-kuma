@@ -8,7 +8,7 @@
 
 | 类别 | 官方总数 | Go 直接对齐 | 等价覆盖 | 缺失 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| REST 路由（生产挂载） | 40 | 38 | — | 2 | `/metrics` 鉴权、状态页徽章、robots.txt、change-password、openapi.json、/api/docs 已对齐官方（2026-11-21），见 §1.1 |
+| REST 路由（生产挂载） | 40 | 39 | — | 1 | `/metrics` 鉴权、状态页徽章、robots.txt、change-password、openapi.json、/api/docs、`/mcp` 已对齐官方（2026-11-21），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
 | Socket 事件（客户端→服务端） | 76 | 71 | — | 5 | proxy/remote-browser 已补齐（2026-11-21）；缺失只剩 cloudflared×5（明确不做），见 §3 |
 | Socket 推送（服务端→客户端） | 23 | 19 | 3 | 1 | domainInfo/refresh/initServerTimezone 已补齐（2026-11-21）；仅剩 importantHeartbeatList（前端不监听），见 §4 |
@@ -57,12 +57,18 @@
 | `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | ✅ 官方鉴权全链路（prometheusApiEnabled 门控 404 → disableAuth → apiKeysEnabled 时 Basic 密码字段=API key，否则用户名密码；E2E 验证 404/401/200/分支切换） |
 | `GET /upload/*`（静态） | server.js:354 | FileServer | ✓ |
 
-### 1.2 缺失（2 条）
+### 1.2 缺失（1 条）
 
 | 官方路由 | 官方位置 | 影响 | 补齐成本 |
 | --- | --- | --- | --- |
-| `ALL /mcp` | mcp-router.ts:74 | 上游新增的 MCP（AI 工具接入）端点，requireApiKey | 大（独立协议栈） |
 | `GET /screenshots/*`（静态） | uptime-kuma-server.ts:230 | real-browser 截图外链 | n/a：Go 的 real-browser 走本地 Chromium / 远程 Playwright，均不落截图产物（已知等价偏差） |
+
+> `ALL /mcp` ✅ 2026-11-21 已补齐（`httpapi/mcp.go`：手写 JSON-RPC 2.0 over streamable HTTP）。
+> 协议行为按官方 SDK 实测对齐：SSE 单条 `event: message` 帧、initialize 版本协商（支持集合内回显，
+> 否则回落 2025-11-25）、`tools/{listChanged}` 能力、notifications 回 202、未知方法 -32601、
+> 未知工具 -32602；门禁沿用 requireApiKey（先鉴权再校验方法，故 GET /mcp 无 key 回 401 而非 405）。
+> 工具严格照官方"无路径参数的 GET 操作"桥接规则，目前只有 `get_info` / `get_monitors`。
+> 已知偏差：坏 JSON 官方是 express.json() 的 400 空 body，Go 给规范化 -32700 "Parse error"。
 
 > `GET /api/status-page/:slug/badge` ✅ 2026-11-21 已补齐（`httpapi/badge.go handleStatusPageBadge`：
 > 聚合 public 分组最新心跳，Maintenance > Degraded > Up > Down 官方同序，PENDING 忽略，
@@ -194,7 +200,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B7 | ~~`domainInfo` + checkDomain（RDAP）~~ | ✅ 2026-11-21 已补齐：`internal/domainexpiry` 包（IANA rdap/dns.json 周缓存+settings 落库+官方 extra/rdap-dns.json 内嵌兜底）、checkDomain 四层校验错误 i18n、checkExpiry 一天缓存、domainExpiryNotifyDays 阈值通知、60 秒节流 domainInfo 推送。E2E 真打 Verisign RDAP，example.com 到期日逐秒一致；`.gov.cn` 无 RDAP 端点按官方报 no-rdap |
 | B8 | ~~`/robots.txt`、`/.well-known/change-password`~~ | ✅ 2026-11-21 已补齐：robots 跟随 searchEngineIndex（未开启全站禁抓、text/plain）、change-password 302 到官方 wiki |
 | B9 | ~~`refresh` / `initServerTimezone` 推送~~ | ✅ 2026-11-21 已补齐：首登推时区初始化、踢人前 refresh 让被踢端自动刷新；E2E 验证首登收到、二次登录不再推、被踢端收 refresh 后断开 |
-| B10 | `/mcp` | 上游新功能（AI 工具接入），独立协议栈，暂缓 |
+| B10 | ~~`/mcp`~~ | ✅ 2026-11-21 已补齐：JSON-RPC 2.0 over streamable HTTP，桥接 get_info/get_monitors；官方 MCP SDK 客户端交叉验证通过（connect/listTools/callTool/未知工具报错 5/5） |
 | B11 | `importantHeartbeatList` 推送 | 前端不消费，仅影响潜在移动端/API 消费者 |
 
 ### C. 等价实现（行为一致，机制不同）
