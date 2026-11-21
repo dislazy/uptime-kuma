@@ -652,6 +652,19 @@ func (mgr *Manager) statsFor(ctx context.Context, monitorID int64) map[string]an
 	return data
 }
 
+// Stats 导出 statsFor，供首屏 "stats" 推送复用同一份缓存与计算口径。
+//
+// 官方 server.js 的 sendDeferredLists 会用 MonitorStats.getCached/refresh
+// 把每个监控的 uptime24/uptime720/uptime1y + avgPing 推给前端；前端
+// socket.js 的 socket.on("stats") 把值塞进 uptimeList，监控列表左侧的
+// 可用率胶囊才不是 "NA"。Go 版必须同样推一份，不能发空对象。
+func (mgr *Manager) Stats(ctx context.Context, monitorID int64) map[string]any {
+	if mgr == nil {
+		return nil
+	}
+	return mgr.statsFor(ctx, monitorID)
+}
+
 func (mgr *Manager) invalidateStats(monitorID int64) {
 	mgr.statsMu.Lock()
 	delete(mgr.statsCache, monitorID)

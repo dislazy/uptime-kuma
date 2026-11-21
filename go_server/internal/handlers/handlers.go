@@ -12,6 +12,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -95,7 +97,7 @@ func (c *Ctx) Arg(i int, dst any) error {
 	if i >= len(c.Args) {
 		return fmt.Errorf("缺少第 %d 个参数", i)
 	}
-	if err := json.Unmarshal(c.Args[i], dst); err != nil {
+	if err := unmarshalArg(c.Args[i], dst); err != nil {
 		return fmt.Errorf("参数 %d 解析失败: %w", i, err)
 	}
 	return nil
@@ -106,7 +108,65 @@ func (c *Ctx) OptArg(i int, dst any) bool {
 	if i >= len(c.Args) {
 		return false
 	}
-	return json.Unmarshal(c.Args[i], dst) == nil
+	return unmarshalArg(c.Args[i], dst) == nil
+}
+
+// unmarshalArg 在目标是指针整数、载荷却是数字字符串时，先剥引号再解析。
+//
+// 官方前端有不少事件把**路由参数**直接当 ID 传，例如 Details.vue:
+//
+//	socket.emit("getMonitor", this.$route.params.id, (res) => ...)
+//
+// vue-router 的 params.id 永远是字符串 "22"。官方 Node 后端把参数丢进 SQL
+// （`WHERE id = ?`），SQLite/MySQL 会隐式把字符串转成数字，所以从来没人发现；
+// Go 这边 json.Unmarshal(`"22"` → int64) 直接报
+// "cannot unmarshal string into Go value of type int64"，事件回 {ok:false}，
+// 前端 `if (res.ok)` 不成立 → 监控详情页（/dashboard/:id）整页空白。
+func unmarshalArg(raw json.RawMessage, dst any) error {
+	err := json.Unmarshal(raw, dst)
+	if err == nil || !isIntegerPtr(dst) {
+		return err
+	}
+
+	s, ok := numericString(raw)
+	if !ok {
+		return err
+	}
+	return json.Unmarshal([]byte(s), dst)
+}
+
+// numericString 判断载荷是否是「纯数字字符串」，是则返回去掉引号后的字面量。
+func numericString(raw json.RawMessage) (string, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if len(trimmed) < 2 || trimmed[0] != '"' || trimmed[len(trimmed)-1] != '"' {
+		return "", false
+	}
+
+	var s string
+	if err := json.Unmarshal([]byte(trimmed), &s); err != nil {
+		return "", false
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", false
+	}
+	if _, err := strconv.ParseInt(s, 10, 64); err != nil {
+		return "", false
+	}
+	return s, true
+}
+
+// isIntegerPtr 判断 dst 是否指向一个整数（只有这种目标才做字符串兼容）。
+func isIntegerPtr(dst any) bool {
+	v := reflect.ValueOf(dst)
+	if v.Kind() != reflect.Ptr || v.IsNil() {
+		return false
+	}
+	switch v.Elem().Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+	}
+	return false
 }
 
 // Handler 是事件处理函数。
@@ -205,7 +265,11 @@ func afterLogin(sock *socketio.Socket, d *Deps, user *auth.User) {
 	// 心跳历史：官方在 dashboardRendered 后延迟发送，这里直接发，
 	// 前端同样能处理，且省掉一次往返。
 	sendHeartbeatLists(ctx, sock, d, monitorList)
-	sock.Emit("stats", map[int64]any{})
+
+	// 看板可用率：官方 sendDeferredLists 紧跟 heartbeatLists 推 stats。
+	// 前端 socket.js 的 socket.on("stats") 用它填 uptimeList —— 列表左侧
+	// 的可用率胶囊靠它显示 "100%"，发空对象就全变 "NA"。
+	sock.Emit("stats", buildStats(ctx, d, monitorList))
 
 	// 首次使用：官方 afterLogin 询问浏览器时区（initServerTimezone 未初始化时）
 	if _, ok, _ := d.Set.Raw(ctx, "initServerTimezone"); !ok {

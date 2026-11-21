@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -230,6 +231,23 @@ func sendHeartbeatLists(ctx context.Context, sock *socketio.Socket, d *Deps, mon
 		}
 		sock.Emit("heartbeatList", id, payload, true)
 	}
+}
+
+// buildStats 汇总每个监控的看板统计（uptime24 / uptime720 / uptime1y + avgPing）。
+//
+// 对齐官方 server.js 里 sendDeferredLists 的 MonitorStats.getCached/refresh：
+// 前端 socket.js 的 socket.on("stats") 按 data[monitorID].uptime24 读，
+// 塞进 $root.uptimeList，监控列表左侧的可用率胶囊（Uptime.vue）才有值。
+// 这里返回 map[string]any，JSON 序列化后 key 就是前端用的 "22"。
+func buildStats(ctx context.Context, d *Deps, monitorList map[int64]map[string]any) map[string]any {
+	if d.Mgr == nil {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(monitorList))
+	for id := range monitorList {
+		out[strconv.FormatInt(id, 10)] = d.Mgr.Stats(ctx, id)
+	}
+	return out
 }
 
 // ---------------- 事件 ----------------
