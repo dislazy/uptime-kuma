@@ -47,7 +47,7 @@ func (s *MonitorStore) RemoteBrowsers(ctx context.Context) ([]RemoteBrowser, err
 
 // SaveRemoteBrowser 新建或更新，语义对齐官方 RemoteBrowser.save：
 // remoteBrowserID 存在即更新，找不到报 "Remote browser not found"。
-func (s *MonitorStore) SaveRemoteBrowser(ctx context.Context, id int64, userID, name, url string) (int64, error) {
+func (s *MonitorStore) SaveRemoteBrowser(ctx context.Context, id int64, userID int64, name, url string) (int64, error) {
 	if !s.db.HasTable(ctx, "remote_browser") {
 		return 0, errors.New("remote_browser table is missing")
 	}
@@ -56,9 +56,8 @@ func (s *MonitorStore) SaveRemoteBrowser(ctx context.Context, id int64, userID, 
 		"name": name,
 		"url":  url,
 	}
-	if userID != "" {
-		values["user_id"] = userID
-	}
+	// 同 SaveProxy：user_id 是 INT NOT NULL，非数字 ID 记 0。
+	values["user_id"] = userID
 
 	if id > 0 {
 		found, err := s.db.Query(ctx, "SELECT id FROM remote_browser WHERE id = ?", id)

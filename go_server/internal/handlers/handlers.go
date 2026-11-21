@@ -116,15 +116,41 @@ type Handler func(*Ctx) (any, error)
 func Register(srv *socketio.Server, d *Deps) {
 	srv.OnConnect = func(sock *socketio.Socket) {
 		d.Hub.Add(sock)
-		bootstrap(sock, d)
+
+		// 事件注册必须同步完成，且要先于任何可能阻塞的操作：
+		// 客户端连上后紧接着 emit 的第一个事件（前端是 login / needSetup）
+		// 必须马上能被处理。官方 socket.io 也是在 connection 回调里同步注册的。
+		user := attach(sock, d)
+
+		// 首屏推送要读全量监控与心跳，放 goroutine 免得压住这条连接的读循环。
+		go pushInitial(sock, d, user)
 	}
 	srv.OnDisconnect = func(sock *socketio.Socket) {
 		d.Hub.Remove(sock)
 	}
 }
 
-// bootstrap 是连接建立后的初始化，严格对齐官方 io.on("connection") 的顺序。
-func bootstrap(sock *socketio.Socket, d *Deps) {
+// attach 解析会话并注册事件处理器，返回当前登录用户（未登录为 nil）。
+func attach(sock *socketio.Socket, d *Deps) *auth.User {
+	ctx := context.Background()
+
+	var user *auth.User
+	if d.Cfg.DisableAuth {
+		user = d.disableAuthUser(ctx)
+	} else {
+		user, _ = d.Auth.UserFromHeader(ctx, sock.Header().Get("Cookie"))
+	}
+
+	registerEvents(sock, d, user)
+
+	if user != nil {
+		sock.SetUserID(user.ID)
+	}
+	return user
+}
+
+// pushInitial 是连接建立后的首屏推送，严格对齐官方 io.on("connection") 的顺序。
+func pushInitial(sock *socketio.Socket, d *Deps, user *auth.User) {
 	ctx := context.Background()
 
 	// 1) 先发 info —— 前端登录页也要显示版本号
@@ -139,21 +165,12 @@ func bootstrap(sock *socketio.Socket, d *Deps) {
 		sock.Emit("setup")
 	}
 
-	// 3) 解析会话
-	var user *auth.User
-	if d.Cfg.DisableAuth {
-		user = d.disableAuthUser(ctx)
-	} else {
-		user, _ = d.Auth.UserFromHeader(ctx, sock.Header().Get("Cookie"))
-	}
-
-	registerEvents(sock, d, user)
-
 	if user != nil {
-		sock.SetUserID(user.ID)
 		sock.Emit("session", user.Username)
 		afterLogin(sock, d, user)
-	} else {
+	} else if sock.UserID() == "" {
+		// 首屏推送在 goroutine 里，期间客户端可能已经自己发了 login。
+		// 那种情况下再推 loginRequired 会让已登录的前端退回登录页。
 		sock.Emit("loginRequired")
 	}
 }

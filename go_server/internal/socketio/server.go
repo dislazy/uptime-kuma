@@ -406,8 +406,11 @@ func (sess *Session) handleSocketPacket(p *Packet) {
 		sess.push(encodeConnect(sess.sid))
 
 		if sess.srv.OnConnect != nil {
-			// 初始化推送耗时较长（读全量监控列表），不能阻塞读循环
-			go sess.srv.OnConnect(sock)
+			// 必须同步调用：客户端收到 "40" 之后可能立刻 emit 第一个事件，
+			// 事件处理器若在异步回调里注册就会漏掉它（实测表现为
+			// "Unsupported event: add"）。耗时较长的首屏推送由 handlers
+			// 自己放进 goroutine，这里不要替它决定。
+			sess.srv.OnConnect(sock)
 		}
 
 	case sioEvent:

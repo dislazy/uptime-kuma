@@ -80,7 +80,7 @@ func (s *MonitorStore) Proxies(ctx context.Context) ([]Proxy, error) {
 //   - active 恒存 1：官方 `bean.active = proxy.active || true` 是恒真表达式
 //     （false || true === true），前端开关实际不生效，这里保持一致
 //   - applyExisting 时把所有 proxy_id 不等于本代理的监控批量指过来
-func (s *MonitorStore) SaveProxy(ctx context.Context, id int64, userID string, p Proxy) (int64, error) {
+func (s *MonitorStore) SaveProxy(ctx context.Context, id int64, userID int64, p Proxy) (int64, error) {
 	if !s.db.HasTable(ctx, "proxy") {
 		return 0, errors.New("proxy table is missing")
 	}
@@ -108,9 +108,10 @@ func (s *MonitorStore) SaveProxy(ctx context.Context, id int64, userID string, p
 		"active":   true, // 官方 `proxy.active || true` 恒真，见函数注释
 		"default":  p.Default,
 	}
-	if userID != "" {
-		values["user_id"] = userID
-	}
+	// user_id 是 INT NOT NULL：better-auth 的用户 ID 是随机字符串，
+	// 直接写进去在 MySQL 严格模式下会 1265 Data truncated（SQLite 会宽容地存成文本）。
+	// 统一按 maintenance.go 里 numericUserID 的既定策略：非纯数字记 0。
+	values["user_id"] = userID
 
 	if id > 0 {
 		found, err := s.db.Query(ctx, "SELECT id FROM proxy WHERE id = ?", id)

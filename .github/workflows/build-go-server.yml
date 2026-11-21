@@ -1,13 +1,20 @@
 # go_server Docker 镜像构建与推送
 #
 # 产物：ghcr.io/<owner>/uptime-kuma-go
-#   - push 到 main 或手动触发 → latest + main-<sha> + sha-<sha>
-#   - 推送 v* tag            → x.y.z / x.y / x + latest
+#
+# 触发策略（2026-11-21 调整：只在发版时构建镜像）：
+#   - push 到 main（go_server/** 或前端文件变化） → 只跑校验（vet + go test），不构建
+#   - 推送 v* tag（或手动 dispatch）              → 校验 + 构建多架构镜像 + 推送
+#
+# 镜像标签（仅发版构建产生）：
+#   x.y.z / x.y / x（来自 tag）、latest、sha-<短sha>
+#   需要"某次 main 提交的镜像"时手动 dispatch 一次，用 sha-<短sha> 固定。
 #
 # 设计说明：编译全部在 runner 原生环境完成（日志可见、无 QEMU 模拟编译、可断点定位）：
-#   job web   → npm run build → dist/
-#   job bin   → setup-go + go build 交叉编译（amd64 / arm64 矩阵）
-#   job image → 把产物装进镜像（go_server/Dockerfile.ci，纯 COPY 无编译）
+#   job verify → go vet + go test（commit 与 tag 都跑）
+#   job web    → npm run build → dist/
+#   job bin    → setup-go + go build 交叉编译（amd64 / arm64 矩阵）
+#   job image  → 把产物装进镜像（go_server/Dockerfile.ci，纯 COPY 无编译）
 # 本地全流程自包含构建仍可用 go_server/Dockerfile（多阶段、源码进镜像）。
 
 name: Build Go Server Image
@@ -41,8 +48,50 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/uptime-kuma-go
 
 jobs:
-  # ---------- 前端 ----------
+  # ---------- 校验（所有触发都跑） ----------
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # 显式固定版本，不用 go-version-file：
+          # go-version-file 曾出现过"秒成功但实际没装对版本"的情况，
+          # 导致 go build 因 `go.mod requires go >= 1.26.0` 立即退出。
+          go-version: "1.26.0"
+          cache-dependency-path: go_server/go.sum
+
+      - name: Go diagnostics
+        run: |
+          which go
+          go version
+          go env GOTOOLCHAIN GOPROXY GOFLAGS GOMODCACHE GOCACHE
+
+      - name: gofmt
+        working-directory: go_server
+        run: |
+          out=$(gofmt -l internal/ cmd/)
+          if [ -n "$out" ]; then
+            echo "::error::以下文件未格式化："
+            echo "$out"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: go_server
+        run: go vet ./...
+
+      - name: Test
+        working-directory: go_server
+        # MySQL 集成测试与 e2e 脚本默认 skip，这里不会连外部数据库
+        run: go test ./... -count=1
+
+  # ---------- 前端（仅发版） ----------
   web:
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -65,8 +114,10 @@ jobs:
           path: dist/
           retention-days: 3
 
-  # ---------- Go 二进制（amd64 / arm64 矩阵，原生交叉编译） ----------
+  # ---------- Go 二进制（仅发版；amd64 / arm64 矩阵，原生交叉编译） ----------
   bin:
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -84,22 +135,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # 显式固定版本，不用 go-version-file：
-          # go-version-file 曾出现过"秒成功但实际没装对版本"的情况，
-          # 导致 go build 因 `go.mod requires go >= 1.26.0` 立即退出。
           go-version: "1.26.0"
           cache-dependency-path: go_server/go.sum
-
-      - name: Go diagnostics
-        run: |
-          which go
-          go version
-          go env GOTOOLCHAIN GOPROXY GOFLAGS GOMODCACHE GOCACHE
-
-      - name: Vet (amd64 only)
-        if: matrix.arch == 'amd64'
-        working-directory: go_server
-        run: go vet ./...
 
       - name: Build binary (linux/${{ matrix.arch }})
         working-directory: go_server
@@ -118,9 +155,10 @@ jobs:
           path: go_server-linux-*
           retention-days: 3
 
-  # ---------- 组装镜像并推送 ----------
+  # ---------- 组装镜像并推送（仅发版） ----------
   image:
     needs: [web, bin]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -170,13 +208,10 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=ref,event=branch
-            type=raw,value=main-{{sha}},enable=${{ startsWith(github.ref, 'refs/heads/') }}
+            type=raw,value=latest
             type=sha,pattern=sha-{{short}}
 
       - name: Build and push
@@ -188,8 +223,8 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.tags.outputs.labels }}
-          build-args: |
-            TARGETARCH=amd64
+          # 不要传 TARGETARCH：它由 buildx 按 platform 自动注入，
+          # 显式传 amd64 会让 arm64 镜像里塞进 amd64 二进制（exec format error）。
 
       - name: Smoke test (amd64)
         run: |

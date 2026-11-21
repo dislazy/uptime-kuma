@@ -305,6 +305,10 @@ func (d *DB) dialectOf() dialect { return d.dialect }
 // isMySQL 是否外部 MySQL/MariaDB。
 func (d *DB) isMySQL() bool { return d.dialect == dialectMariaDB }
 
+// IsMySQL 供上层判断方言。少数 SQL 两端没有共同写法（VACUUM、体积统计），
+// 需要在 handler 里分流，官方也是这么做的。
+func (d *DB) IsMySQL() bool { return d.isMySQL() }
+
 // bracketIdent 匹配 SQL 里的 [ident] 写法（SQLite 的标识符引号）。
 // 只匹配简单标识符，不会碰到字符串字面量——代码里没有含 [...] 的 SQL 字符串常量。
 var bracketIdent = regexp.MustCompile(`\[([A-Za-z_][A-Za-z0-9_]*)\]`)

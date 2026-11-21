@@ -23,8 +23,17 @@
 -- （见 monitor.go 注释"官方库开启了外键级联，这里仍显式清理，兼容关闭外键的老库"），
 -- 不依赖级联；不建外键同时避免了插入顺序约束和约束名跨表唯一的问题。
 --
--- 时区约定：连接串强制 session time_zone='+00:00'，因此 CURRENT_TIMESTAMP 与
--- TIMESTAMP(3) 列都按 UTC 存取，和官方 mysql2 timezone:"Z" 的语义一致。
+-- 时区约定：连接串强制 session time_zone='+00:00'，因此 CURRENT_TIMESTAMP 按 UTC
+-- 生成，和官方 mysql2 timezone:"Z" 的语义一致。
+--
+-- 时间列一律用 DATETIME(3)，不用 TIMESTAMP(3)。三个原因（2026-11-21 真库实测）：
+--  1. MariaDB 默认 explicit_defaults_for_timestamp=OFF，同一张表里第二个
+--     TIMESTAMP NOT NULL 会被隐式补 DEFAULT '0000-00-00 00:00:00'，严格模式下
+--     直接 Error 1067 Invalid default value（better_auth_user.updatedAt 就撞这里）；
+--  2. TIMESTAMP 只到 2038 年，better_auth_session.expiresAt / banExpires 这类
+--     未来时间有溢出风险；DATETIME 可到 9999 年；
+--  3. TIMESTAMP 按会话时区做一次隐式换算，DATETIME 原样存取——与 SQLite
+--     "存 UTC 文本"的语义一致，也不怕别的客户端用非 UTC 会话读到偏移值。
 
 CREATE TABLE IF NOT EXISTS `user` (
     `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -456,14 +465,14 @@ CREATE TABLE IF NOT EXISTS `better_auth_user` (
     `email`           TEXT NOT NULL,
     `emailVerified`   INT NOT NULL DEFAULT 0,
     `image`           TEXT,
-    `createdAt`       TIMESTAMP(3) NOT NULL,
-    `updatedAt`       TIMESTAMP(3) NOT NULL,
+    `createdAt`       DATETIME(3) NOT NULL,
+    `updatedAt`       DATETIME(3) NOT NULL,
     `username`        VARCHAR(255),
     `displayUsername` TEXT,
     `role`            TEXT,
     `banned`          INT DEFAULT 0,
     `banReason`       TEXT,
-    `banExpires`      TIMESTAMP(3),
+    `banExpires`      DATETIME(3),
     `twoFactorEnabled` INT DEFAULT 0,
     UNIQUE KEY `better_auth_user_username_unique` (`username`)
 );
@@ -472,11 +481,11 @@ CREATE TABLE IF NOT EXISTS `better_auth_session` (
     `id`        VARCHAR(255) PRIMARY KEY,
     `userId`    VARCHAR(255) NOT NULL,
     `token`     VARCHAR(255) NOT NULL,
-    `expiresAt` TIMESTAMP(3) NOT NULL,
+    `expiresAt` DATETIME(3) NOT NULL,
     `ipAddress` TEXT,
     `userAgent` TEXT,
-    `createdAt` TIMESTAMP(3) NOT NULL,
-    `updatedAt` TIMESTAMP(3) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL,
+    `updatedAt` DATETIME(3) NOT NULL,
     `impersonatedBy` TEXT,
     KEY `better_auth_session_token` (`token`)
 );
@@ -488,22 +497,22 @@ CREATE TABLE IF NOT EXISTS `better_auth_account` (
     `providerId`            TEXT NOT NULL,
     `accessToken`           TEXT,
     `refreshToken`          TEXT,
-    `accessTokenExpiresAt`  TIMESTAMP(3),
-    `refreshTokenExpiresAt` TIMESTAMP(3),
+    `accessTokenExpiresAt`  DATETIME(3),
+    `refreshTokenExpiresAt` DATETIME(3),
     `scope`                 TEXT,
     `idToken`               TEXT,
     `password`              TEXT,
-    `createdAt`             TIMESTAMP(3) NOT NULL,
-    `updatedAt`             TIMESTAMP(3) NOT NULL
+    `createdAt`             DATETIME(3) NOT NULL,
+    `updatedAt`             DATETIME(3) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `better_auth_verification` (
     `id`         VARCHAR(255) PRIMARY KEY,
     `identifier` TEXT NOT NULL,
     `value`      TEXT NOT NULL,
-    `expiresAt`  TIMESTAMP(3) NOT NULL,
-    `createdAt`  TIMESTAMP(3) NOT NULL,
-    `updatedAt`  TIMESTAMP(3) NOT NULL
+    `expiresAt`  DATETIME(3) NOT NULL,
+    `createdAt`  DATETIME(3) NOT NULL,
+    `updatedAt`  DATETIME(3) NOT NULL
 );
 
 -- 官方 2026-06-29 迁移（@better-auth/api-key）原样照搬，列名 referenceId/configId 必须一致，
@@ -518,17 +527,17 @@ CREATE TABLE IF NOT EXISTS `better_auth_apikey` (
     `referenceId`         VARCHAR(255),
     `refillInterval`      INT,
     `refillAmount`        INT,
-    `lastRefillAt`        TIMESTAMP(3),
+    `lastRefillAt`        DATETIME(3),
     `enabled`             INT DEFAULT 1,
     `rateLimitEnabled`    INT DEFAULT 1,
     `rateLimitTimeWindow` INT,
     `rateLimitMax`        INT,
     `requestCount`        INT DEFAULT 0,
     `remaining`           INT,
-    `lastRequest`         TIMESTAMP(3),
-    `expiresAt`           TIMESTAMP(3),
-    `createdAt`           TIMESTAMP(3) NOT NULL,
-    `updatedAt`           TIMESTAMP(3) NOT NULL,
+    `lastRequest`         DATETIME(3),
+    `expiresAt`           DATETIME(3),
+    `createdAt`           DATETIME(3) NOT NULL,
+    `updatedAt`           DATETIME(3) NOT NULL,
     `permissions`         TEXT,
     `metadata`            TEXT,
     KEY `better_auth_apikey_key` (`key`)
@@ -541,7 +550,7 @@ CREATE TABLE IF NOT EXISTS `better_auth_twofactor` (
     `userId`                  VARCHAR(255) NOT NULL,
     `verified`                INT DEFAULT 1,
     `failedVerificationCount` INT NOT NULL DEFAULT 0,
-    `lockedUntil`             TIMESTAMP(3)
+    `lockedUntil`             DATETIME(3)
 );
 
 -- go_server 自用元数据表，官方版本不会读它

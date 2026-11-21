@@ -108,11 +108,18 @@ git log b0cd0f1d..master --oneline
 | 依赖升级（`package.json` / `package-lock.json`） | 一般不需要 | 除非影响前端构建或引入新的运行时约定 |
 | CI / release 脚本 | 不需要 | 本仓库用自己的 workflow |
 
-### 3.3 三个高频陷阱
+### 3.3 四个高频陷阱
 
 1. **`active || true` 类"官方 bug"要不要照抄？** 照抄。目标是行为等价，不是修上游 bug。修正会让前端在两种后端下表现不一致。历史上 proxy 的启用开关就是这种恒真表达式，Go 侧保留并写注释说明。
 2. **官方注释说"公开"的端点别自己加鉴权**。典型是 status page：官方就是公开访问的，加了登录门槛反而破坏嵌入场景。
 3. **不要给字段做"顺手优化"**（trim、类型转换、默认值补全）。例如用户名密码校验官方不 trim，Go 也不能 trim，否则会产生"官方能登、Go 不能登"的疑难杂症。
+4. **"SQLite 能跑"不等于"MySQL 能跑"**。SQLite 是动态类型 + 宽容比较，MySQL 严格模式下会直接报错。2026-11-21 真库联调抓到的五类：
+   - `TIMESTAMP NOT NULL` 有第二列时 MariaDB 隐式补零值默认 → **1067**（所以时间列统一 `DATETIME(3)`）；
+   - `WHERE datetime_col != ''` 让 MySQL 把 `''` 转日期 → **1292**（改用 `LENGTH(col) > 0`）；
+   - better-auth 的字符串用户 ID 写进 `INT UNSIGNED` → **1265**（统一走 `handlers.numericUserID`，非数字记 0）；
+   - `VACUUM` 是 SQLite 专属（`shrinkDatabase` 要按 `DB.IsMySQL()` 分支，官方也是空操作）；
+   - 派生表 `FROM (SELECT ...)` 必须有别名 → **1248**（`TestNoSQLiteOnlySQLInSources` 会扫）。
+   **新增 SQL 后先跑 `go test ./internal/store/ -run TestNoSQLiteOnlySQLInSources`，涉及写路径再跑一次真库冒烟。**
 
 ---
 
@@ -182,7 +189,7 @@ git log b0cd0f1d..master --oneline
 | 纯文档 | 无 | — |
 | 单个 checker / provider | 单测 + 编译 | `go build ./... && go test ./internal/checkers/ -count=1` |
 | store / schema | 单测 + 老库启动 | `go test ./internal/store/ -count=1` + 老 `kuma.db` 冒烟 |
-| store 方言（涉及 SQL / schema） | 上述 + 两份 schema 对齐 | `go test ./internal/store/ -run 'Schema\|SQL\|DSN' -v`（`TestSchemaParity`、`TestNoSQLiteOnlySQLInSources`） |
+| store 方言（涉及 SQL / schema） | 上述 + 两份 schema 对齐 + **真库跑一次** | `go test ./internal/store/ -run 'Schema\|SQL\|DSN' -v`（`TestSchemaParity`、`TestNoSQLiteOnlySQLInSources`）；再按 [`go_server/e2e/README.md`](go_server/e2e/README.md) 跑 `TestMariaDBIntegration` |
 | socket 事件 | **必须真连 socket** | 起服务 + `node` 脚本用 `socket.io-client@4` 走完整流程 |
 | REST 路由 | curl/HTTP 断言 | 参照 `API-PARITY.md` 附录命令 |
 | 协议层（socketio / MCP / Playwright） | **必须对接真实对端** | socket 用官方客户端库；MCP 用 `@modelcontextprotocol/client`；远程浏览器用真 `launchServer` |
@@ -204,22 +211,26 @@ go test ./... -count=1
 
 ### 5.3 CI 目前覆盖到哪（和缺口）
 
-`.github/workflows/build-go-server.yml` 在 push `main`（`go_server/**` 或前端文件变化）时跑：
+`.github/workflows/build-go-server.yml` 分两条路径（2026-11-21 调整）：
 
+**push `main`（`go_server/**` 或前端文件变化）→ 只校验，不构建镜像**
+`go vet ./...` + `go test ./... -count=1`，两分钟内出结果。
+
+**打 `v*` tag（或手动 dispatch）→ 才发版构建**
 1. 构建前端（Vue → dist，打进镜像）
-2. `go vet ./...`
+2. `go vet` + `go test`
 3. 交叉编译 linux/amd64 + arm64（版本号注入 `${package.json版本}-go.${短sha}`）
-4. 组装多架构镜像推 GHCR（`latest` / `main` / `main-<sha>` / `sha-<sha>`）
+4. 组装多架构镜像推 GHCR：`x.y.z` / `x.y` / `x` / `latest` / `sha-<sha>`
 5. **冒烟测试**：真起容器，轮询 `/api/health` 等 `{"ok":true}`
 
-**已知缺口**：CI **没有跑 `go test`**，测试只在本地。所以本地 `go test ./...` 不能跳。若以后要补，在 vet 之后加一步 `run: go test ./... -count=1` 即可。
+这样日常提交不烧构建额度，`latest` 只在正式发版时前进；需要"某次提交的镜像"时用 `sha-<短sha>` 或手动 dispatch。
 
 ### 5.4 当前维护债（该修还没修的）
 
 | 项 | 影响 | 建议做法 |
 | --- | --- | --- |
-| CI 不跑单测 | 回归只能靠本地自觉 | workflow 里 vet 后加 `go test ./...` |
-| E2E 脚本散在 `/tmp/sio/*.js`、`/tmp/kuma-proxy-e2e/` | **重启即丢**，下次验证要重写；协议细节（socket.io 帧、MCP、Playwright）全靠这些脚本证明 | 收进 `go_server/e2e/`（node 脚本 + helper Go 程序 + README），CI 可选跑 |
+| ~~CI 不跑单测~~ | 已在 2026-11-21 补上（`main` push 与 tag 都跑 `go test ./...`） | 已完成 |
+| ~~E2E 脚本散在 `/tmp`~~ | MySQL 相关脚本已收进 `go_server/e2e/`；其余协议验证脚本（proxy / MCP / Playwright）仍在 `/tmp`，重写前先看 git 历史里的提交说明 | 需要时按同样的格式收进 `go_server/e2e/` |
 | `/metrics` 只有 3 个自订 gauge（B12） | 官方 Grafana 面板接不上 | 见 `API-PARITY.md` B12 |
 | 徽章忽略 `style` 参数（C 级） | 用户传 `?style=plastic` 无效 | 低优先，需要时补字宽表 |
 
@@ -313,7 +324,7 @@ grep -n "直接对齐 40 条\|REST 路由（生产挂载）\|Socket 事件（客
 | `importantHeartbeatList` 推送 | 暂不实现 | 前端不消费 |
 | `/metrics` 完整指标集（B12） | **暂不做**（2026-11-21 决定） | 需要 7 个标准指标 + 动态 tag label；当前只有 3 个 `gokuma_*` gauge，官方 Grafana 面板接不上 |
 | `embedded-mariadb` 存储 | **不做** | 要把 `mariadbd` 打进镜像（约 +430MB）并实现 datadir 初始化、socket 启动；外部 MariaDB 已覆盖生产用法 |
-| MySQL/MariaDB 真库联调 | **未做**（2026-11-21） | 开发机不装数据库（用户要求）；DDL 与方言按官方 knex 的 MySQL 产物逐条核对，靠 `TestSchemaParity` 与源码扫描兜底。**上线前建议在一台有 MySQL 的环境跑一次首次建库 + 老库接管** |
+| MySQL/MariaDB 真库联调 | **已完成**（2026-11-21，外部 MariaDB） | `TestMariaDBIntegration` + `e2e/mysql_smoke.js` 跑通建库/接管/读写/聚合/CRUD；抓出并修掉 5 个 SQLite 才宽容的问题（见 §3.3 第 4 条）。开发机仍不装数据库，复测依赖外部库 + 环境变量 |
 | C 级"等价实现"5 项 | 不动 | 行为一致，机制不同，改了没有收益 |
 
 **新增缺口的记录方式**：先在 `API-PARITY.md` §5 分好级（A 安全 / B 功能 / C 等价 / D 占位 / E 不适用），再决定做不做。**分级要诚实**——把功能缺失写成"等价实现"会让以后的自己误判，`/metrics` 就是这么被纠回来的。

@@ -455,6 +455,12 @@ func getDatabaseSize(c *Ctx) (any, error) {
 		return nil, err
 	}
 
+	// 官方 Database.getSize() 对非 SQLite 直接返回 0，这里保持一致：
+	// MySQL 的库大小不该按"数据文件"算，前端也只拿它显示个数值。
+	if c.DB.IsMySQL() {
+		return int64(0), nil
+	}
+
 	st, err := os.Stat(c.DB.Path())
 	if err != nil {
 		return int64(0), nil
@@ -462,13 +468,18 @@ func getDatabaseSize(c *Ctx) (any, error) {
 	return st.Size(), nil
 }
 
-// shrinkDatabase 执行 VACUUM 压缩数据库。
+// shrinkDatabase 压缩数据库。
+//
+// 官方 Database.shrink() 只对 SQLite 执行 VACUUM，MariaDB 下是空操作并返回 ok；
+// 无条件 VACUUM 在 MySQL 上是语法错误（真库实测会直接报 1064）。
 func shrinkDatabase(c *Ctx) (any, error) {
 	if err := c.RequireLogin(); err != nil {
 		return nil, err
 	}
-	if _, err := c.DB.Exec(c.Ctx, "VACUUM"); err != nil {
-		return map[string]any{"ok": false, "msg": err.Error()}, nil
+	if !c.DB.IsMySQL() {
+		if _, err := c.DB.Exec(c.Ctx, "VACUUM"); err != nil {
+			return map[string]any{"ok": false, "msg": err.Error()}, nil
+		}
 	}
 	return map[string]any{"ok": true, "msg": "Database shrunk successfully."}, nil
 }

@@ -12,12 +12,12 @@ func TestProxyCRUD(t *testing.T) {
 	ms := NewMonitorStore(db)
 
 	// 协议校验：官方 Unsupported proxy protocol
-	if _, err := ms.SaveProxy(ctx, 0, "user-1", Proxy{Protocol: "grpc", Host: "127.0.0.1", Port: 8080}); err == nil {
+	if _, err := ms.SaveProxy(ctx, 0, 1, Proxy{Protocol: "grpc", Host: "127.0.0.1", Port: 8080}); err == nil {
 		t.Fatal("非法协议未被拒绝")
 	}
 
 	// 新建
-	id, err := ms.SaveProxy(ctx, 0, "user-1", Proxy{
+	id, err := ms.SaveProxy(ctx, 0, 1, Proxy{
 		Protocol: "socks5", Host: "127.0.0.1", Port: 1080,
 		Auth: true, Username: "u", Password: "p",
 		Active: false, // 官方 `active || true` 恒真，false 也会被存成 1
@@ -57,14 +57,14 @@ func TestProxyCRUD(t *testing.T) {
 	}
 
 	// 更新 + 设为 default
-	if _, err := ms.SaveProxy(ctx, id, "user-1", Proxy{
+	if _, err := ms.SaveProxy(ctx, id, 1, Proxy{
 		Protocol: "http", Host: "10.0.0.9", Port: 3128, Default: true,
 	}); err != nil {
 		t.Fatalf("更新失败: %v", err)
 	}
 
 	// 第二个 default 应把第一个顶掉
-	id2, err := ms.SaveProxy(ctx, 0, "user-1", Proxy{
+	id2, err := ms.SaveProxy(ctx, 0, 1, Proxy{
 		Protocol: "http", Host: "10.0.0.10", Port: 3128, Default: true,
 	})
 	if err != nil {
@@ -82,7 +82,7 @@ func TestProxyCRUD(t *testing.T) {
 	}
 
 	// 更新不存在的 ID
-	if _, err := ms.SaveProxy(ctx, 9999, "user-1", Proxy{Protocol: "http", Host: "h", Port: 1}); err == nil {
+	if _, err := ms.SaveProxy(ctx, 9999, 1, Proxy{Protocol: "http", Host: "h", Port: 1}); err == nil {
 		t.Fatal("更新不存在的代理应报错")
 	}
 }
@@ -93,7 +93,7 @@ func TestProxyDeleteCascade(t *testing.T) {
 	db := newTestDB(t)
 	ms := NewMonitorStore(db)
 
-	pid, err := ms.SaveProxy(ctx, 0, "user-1", Proxy{Protocol: "http", Host: "127.0.0.1", Port: 3128})
+	pid, err := ms.SaveProxy(ctx, 0, 1, Proxy{Protocol: "http", Host: "127.0.0.1", Port: 3128})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestProxyApplyExisting(t *testing.T) {
 	m1, _ := ms.Create(ctx, map[string]any{"name": "a", "type": "http", "url": "https://a.example"})
 	m2, _ := ms.Create(ctx, map[string]any{"name": "b", "type": "http", "url": "https://b.example"})
 
-	pid, err := ms.SaveProxy(ctx, 0, "user-1", Proxy{
+	pid, err := ms.SaveProxy(ctx, 0, 1, Proxy{
 		Protocol: "http", Host: "127.0.0.1", Port: 3128, ApplyExisting: true,
 	})
 	if err != nil {

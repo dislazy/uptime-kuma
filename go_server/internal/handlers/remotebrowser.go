@@ -38,7 +38,7 @@ func addRemoteBrowser(c *Ctx) (any, error) {
 		return nil, errors.New("Remote browser URL is required")
 	}
 
-	newID, err := c.Mon.SaveRemoteBrowser(c.Ctx, id, c.RequireUserID(), name, url)
+	newID, err := c.Mon.SaveRemoteBrowser(c.Ctx, id, numericUserID(c), name, url)
 	if err != nil {
 		return nil, err
 	}

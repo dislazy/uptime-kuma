@@ -185,9 +185,14 @@ func (s *Service) VerifyAPIKey(ctx context.Context, key string) (string, error) 
 }
 
 // deleteExpiredAPIKeys 对齐官方 deleteAllExpiredApiKeys。
+// deleteExpiredAPIKeys 清掉已过期的 key。
+//
+// 判断"有值"用 LENGTH(...) > 0 而不是 `expiresAt != ”`：MySQL 把 DATETIME
+// 和 ” 比较会先把 ” 转成日期，直接报 1292 Incorrect datetime value（真库实测）。
+// LENGTH 在两种方言下语义一致——SQLite 里老数据可能存过 ”，MySQL 的空值只能是 NULL。
 func (s *Service) deleteExpiredAPIKeys(ctx context.Context) error {
 	_, err := s.db.Exec(ctx,
-		"DELETE FROM better_auth_apikey WHERE expiresAt IS NOT NULL AND expiresAt != '' AND expiresAt < ?",
+		"DELETE FROM better_auth_apikey WHERE expiresAt IS NOT NULL AND LENGTH(expiresAt) > 0 AND expiresAt < ?",
 		store.Now())
 	return err
 }

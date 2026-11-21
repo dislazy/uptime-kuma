@@ -121,12 +121,20 @@ environment:
 - 账号需要 `CREATE` 权限（首次启动要建库）；库已存在时可只给该库的读写权限
 - 连接串强制 `time_zone='+00:00'`、`parseTime=false`：库里存的是 UTC 字符串，
   驱动不做二次时区换算，与官方 mysql2 的 `timezone:"Z"` + DATETIME 原样返回等价
-- 时间列用 `DATETIME(3)` / `TIMESTAMP(3)`，保留毫秒；官方 MySQL 侧若建成 `DATETIME`（无精度），
-  毫秒会被四舍五入到秒，属于对方表的限制
+- 时间列统一 `DATETIME(3)`（不用 `TIMESTAMP`）：MariaDB 在
+  `explicit_defaults_for_timestamp=OFF` 下会给同表第二个 `TIMESTAMP NOT NULL` 隐式补
+  `'0000-00-00 00:00:00'`，严格模式直接 1067；而且 `TIMESTAMP` 只到 2038 年、还会按会话时区换算
 - 表名、列名与 SQLite 完全一致（`internal/store/schema_mysql.sql` 由 `TestSchemaParity` 逐表逐列校验）
 - **不依赖外键级联**：删除路径显式清理 7 张关联表（`store.MonitorStore.Delete`），
   因此 MySQL 侧不建外键，避免插入顺序与约束名冲突
+- `proxy.user_id` / `remote_browser.user_id` 是 `INT NOT NULL`，而 better-auth 的用户 ID 是随机字符串，
+  非纯数字时记 0（`handlers.numericUserID`）；直接写字符串在 MySQL 严格模式下报 1265
+- `getDatabaseSize` / `shrinkDatabase` 与官方一致：MySQL 下返回 0、收缩是空操作
+  （官方 `Database.shrink()` 只对 SQLite 执行 `VACUUM`）
 - 未实现 `embedded-mariadb`（官方镜像内置 `mariadbd` 的那套），只支持外部库
+
+真库验证方式见 [`e2e/README.md`](e2e/README.md)：`TestMariaDBIntegration`（进程内直连，
+未设环境变量自动 skip）+ `e2e/mysql_smoke.js`（真实服务 + socket.io 全链路）。
 
 方言差异只在 6 处，都在 `internal/store`：
 `information_schema` 查表/列、两份建表脚本、`ON DUPLICATE KEY UPDATE`（替代 `ON CONFLICT`）、

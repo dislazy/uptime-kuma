@@ -19,7 +19,10 @@ RUN apk add --no-cache ca-certificates tzdata iputils \
 
 WORKDIR /app
 
-ARG TARGETARCH=amd64
+# TARGETARCH 由 buildx 按 --platform 自动注入，这里不要给默认值：
+# 写成 ARG TARGETARCH=amd64 时，一旦 build 时显式传了 build-args，
+# 两个架构都会 COPY amd64 二进制，arm64 镜像启动即 exec format error。
+ARG TARGETARCH
 COPY dist/ /app/web/dist/
 COPY go_server-linux-${TARGETARCH} /app/go_server
 # actions/download-artifact 恢复文件时不保留可执行位，必须显式补上，

@@ -41,7 +41,7 @@ func addProxy(c *Ctx) (any, error) {
 		ApplyExisting: asBool(payload["applyExisting"]),
 	}
 
-	newID, err := c.Mon.SaveProxy(c.Ctx, id, c.RequireUserID(), p)
+	newID, err := c.Mon.SaveProxy(c.Ctx, id, numericUserID(c), p)
 	if err != nil {
 		return nil, err
 	}
