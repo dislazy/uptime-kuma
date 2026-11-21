@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"time"
@@ -114,7 +113,7 @@ func (h *HeartbeatStore) flushLoop(ctx context.Context) {
 }
 
 func (h *HeartbeatStore) writeBatch(ctx context.Context, beats []model.Beat) error {
-	return h.db.Tx(ctx, func(tx *sql.Tx) error {
+	return h.db.Tx(ctx, func(tx *Tx) error {
 		stmt, err := tx.PrepareContext(ctx,
 			`INSERT INTO heartbeat (important, monitor_id, status, msg, time, ping, duration, down_count)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -159,7 +158,7 @@ func (h *HeartbeatStore) Recent(ctx context.Context, monitorID int64, limit int)
 	rows, err := h.db.Query(ctx, `
 		SELECT * FROM (
 			SELECT * FROM heartbeat WHERE monitor_id = ? ORDER BY time DESC LIMIT ?
-		) ORDER BY time ASC`, monitorID, limit)
+		) AS t ORDER BY time ASC`, monitorID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +172,7 @@ func (h *HeartbeatStore) Paged(ctx context.Context, monitorID int64, limit, offs
 			SELECT * FROM heartbeat
 			WHERE monitor_id = ? AND important = 1
 			ORDER BY time DESC LIMIT ? OFFSET ?
-		) ORDER BY time ASC`, monitorID, limit, offset)
+		) AS t ORDER BY time ASC`, monitorID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

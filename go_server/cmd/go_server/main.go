@@ -37,7 +37,11 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logx.Errorf("main", "%v", err)
+		os.Exit(1)
+	}
 
 	if config.PrintVersion {
 		fmt.Println(version.String())
@@ -68,7 +72,26 @@ func run(cfg *config.Config) error {
 	defer cancel()
 
 	// ---------- 数据库 ----------
-	db, err := store.Open(cfg.DBPath)
+	var (
+		db  *store.DB
+		err error
+	)
+	if cfg.IsMariaDB() {
+		logx.Infof("main", "存储后端: MySQL/MariaDB %s:%d/%s", cfg.DBHostname, cfg.DBPort, cfg.DBName)
+		db, err = store.OpenMariaDB(store.MariaDBConfig{
+			Hostname: cfg.DBHostname,
+			Port:     cfg.DBPort,
+			DBName:   cfg.DBName,
+			Username: cfg.DBUsername,
+			Password: cfg.DBPassword,
+			Socket:   cfg.DBSocket,
+			SSL:      cfg.DBSSL,
+			CA:       cfg.DBCA,
+			MaxConns: cfg.DBMaxConns,
+		})
+	} else {
+		db, err = store.Open(cfg.DBPath)
+	}
 	if err != nil {
 		return err
 	}

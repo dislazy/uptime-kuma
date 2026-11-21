@@ -87,6 +87,52 @@ docker run -d --name uptime-kuma-go \
 | `UPTIME_KUMA_MAX_CONCURRENT_CHECKS` | `-max-concurrent-checks` | 20 | 检查并发上限 |
 | `UPTIME_KUMA_KEEP_HEARTBEAT_DAYS` | `-keep-heartbeat-days` | 365 | 数据保留天数（心跳 + 聚合；默认跟随 UI 设置 keepDataPeriodDays，显式配置时覆盖，<1 禁用清理） |
 | `UPTIME_KUMA_DEBUG` | `-debug` | false | debug 日志 |
+| `UPTIME_KUMA_DB_TYPE` | — | `sqlite` | 存储后端：`sqlite` / `mariadb`（也接受 `mysql` 别名） |
+| `UPTIME_KUMA_DB_HOSTNAME` | — | 127.0.0.1 | 数据库主机（`mariadb` 模式） |
+| `UPTIME_KUMA_DB_PORT` | — | 3306 | 数据库端口 |
+| `UPTIME_KUMA_DB_NAME` | — | kuma | 库名，不存在时自动 `CREATE DATABASE ... utf8mb4` |
+| `UPTIME_KUMA_DB_USERNAME` | — | 必填 | 用户名，支持 `_FILE` 后缀 |
+| `UPTIME_KUMA_DB_PASSWORD` | — | — | 密码，支持 `_FILE` 后缀 |
+| `UPTIME_KUMA_DB_SOCKET` | — | — | unix socket 路径，设置后忽略 hostname/port |
+| `UPTIME_KUMA_DB_SSL` | — | false | 启用 TLS，支持 `_FILE` 后缀 |
+| `UPTIME_KUMA_DB_CA` | — | — | 自定义 CA（PEM），支持 `_FILE` 后缀 |
+| `UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS` | — | 10 | 连接池上限，1–100（超界按官方规则回落/截断） |
+
+`_FILE` 后缀用于 docker secrets：`UPTIME_KUMA_DB_PASSWORD_FILE=/run/secrets/db_pass`。
+同一项和它的 `_FILE` 版本同时设置会直接报错（与官方 `getEnvOrFile` 一致）。
+
+---
+
+## 存储后端
+
+默认 SQLite（`<DATA_DIR>/kuma.db`），也可以接外部 MySQL / MariaDB：
+
+```yaml
+environment:
+  - UPTIME_KUMA_DB_TYPE=mariadb
+  - UPTIME_KUMA_DB_HOSTNAME=db
+  - UPTIME_KUMA_DB_PORT=3306
+  - UPTIME_KUMA_DB_NAME=kuma
+  - UPTIME_KUMA_DB_USERNAME=kuma
+  - UPTIME_KUMA_DB_PASSWORD_FILE=/run/secrets/kuma_db_pass
+```
+
+- 最低版本 **MySQL 8.0.13 / MariaDB 10.2**（用到 TEXT 列的表达式默认值）
+- 账号需要 `CREATE` 权限（首次启动要建库）；库已存在时可只给该库的读写权限
+- 连接串强制 `time_zone='+00:00'`、`parseTime=false`：库里存的是 UTC 字符串，
+  驱动不做二次时区换算，与官方 mysql2 的 `timezone:"Z"` + DATETIME 原样返回等价
+- 时间列用 `DATETIME(3)` / `TIMESTAMP(3)`，保留毫秒；官方 MySQL 侧若建成 `DATETIME`（无精度），
+  毫秒会被四舍五入到秒，属于对方表的限制
+- 表名、列名与 SQLite 完全一致（`internal/store/schema_mysql.sql` 由 `TestSchemaParity` 逐表逐列校验）
+- **不依赖外键级联**：删除路径显式清理 7 张关联表（`store.MonitorStore.Delete`），
+  因此 MySQL 侧不建外键，避免插入顺序与约束名冲突
+- 未实现 `embedded-mariadb`（官方镜像内置 `mariadbd` 的那套），只支持外部库
+
+方言差异只在 6 处，都在 `internal/store`：
+`information_schema` 查表/列、两份建表脚本、`ON DUPLICATE KEY UPDATE`（替代 `ON CONFLICT`）、
+`GREATEST`（替代 `MAX(a,b)`）、`CAST(... AS SIGNED)`（替代 `AS INTEGER`）、
+以及执行入口把 SQLite 的 `[ident]` 统一改写成反引号。
+`TestNoSQLiteOnlySQLInSources` 会扫描全部源码，防止以后在新代码里写出只在 SQLite 下能跑的 SQL。
 
 ---
 
@@ -189,14 +235,15 @@ docker run -d --name uptime-kuma-go \
 | JSONata 沙箱 | 官方用 `node:vm` 跑 jsonata.js；这里用纯 Go 的 `jsonata-go`，个别边缘语法可能不一致 |
 | real-browser | 需要 `-tags realbrowser` 且机器上有 Chromium；默认构建返回"需重建"提示 |
 | Web Push | 代码完成、VAPID 密钥自动生成并落库，但**未做浏览器端实测** |
-| 证书/域名到期 | `monitor_tls_info` / `domain_expiry` 未实现 |
+| embedded-mariadb | 不实现。官方镜像内置 `mariadbd` 并在 `/app/data/mariadb` 起实例；这里只支持外部 MySQL/MariaDB |
+| `/metrics` | 指标集未对齐官方 7 个标准指标（见 API-PARITY 的 B12） |
 
 ## 代码结构
 
 ```
 cmd/go_server/main.go      装配与优雅退出
 internal/config            环境变量 / 参数
-internal/store             SQLite 访问层（列名自适应、批量写、聚合）
+internal/store             SQLite / MySQL 双后端：列名自适应、批量写、聚合、方言改写
 internal/model             跨包共享类型与状态常量
 internal/auth              scrypt / bcrypt / sha1、会话 Cookie、TOTP
 internal/socketio          Engine.IO v4 + Socket.IO v4
@@ -220,6 +267,13 @@ internal/web               SPA 静态托管
 - 新增 socket 事件：在 `internal/handlers` 写 `func(*Ctx) (any, error)`，然后在 `registerEvents` 挂一行
 - 字段名一律照抄官方 JS 里的写法，不要"顺手改成 Go 风格"，否则前端读不到
 - 协议层改动必须用真实 `socket.io-client` 验一遍（`socket.io-client@4`），curl 只能验 REST
+- 写 SQL 的硬规则（两种存储后端都要能跑）：
+  - 表名/列名用 `[ident]` 包裹（执行入口会按方言转成反引号），**不要裸写** `interval` /
+    `key` / `default` / `group` 这类 MySQL 保留字
+  - 不要用 SQLite 专属语法：`PRAGMA`、`sqlite_master`、`ON CONFLICT`、`excluded.`、
+    `AUTOINCREMENT`、`CAST(... AS INTEGER)`、`||` 拼接
+  - 派生表必须带别名（`FROM (SELECT ...) AS t`），MySQL 没别名直接报 1248
+  - 新增表/列要**同时**改 `schema.sql` 和 `schema_mysql.sql`，`TestSchemaParity` 会拦住漏改
 
 ## 已知限制
 

@@ -11,6 +11,22 @@
 //	UPTIME_KUMA_TRUST_PROXY            信任反向代理提供的 X-Forwarded-For
 //	UPTIME_KUMA_DISABLE_AUTH           关闭鉴权（单机自用场景）
 //	UPTIME_KUMA_DEBUG                  打开 debug 日志
+//
+// 数据库（与官方 server/setup-database.js 同名同义）：
+//
+//	UPTIME_KUMA_DB_TYPE                sqlite（默认）| mariadb
+//	UPTIME_KUMA_DB_HOSTNAME            主机名（用 socket 时忽略）
+//	UPTIME_KUMA_DB_PORT                端口，默认 3306
+//	UPTIME_KUMA_DB_NAME                库名，默认 kuma
+//	UPTIME_KUMA_DB_USERNAME            用户名
+//	UPTIME_KUMA_DB_PASSWORD            密码
+//	UPTIME_KUMA_DB_SOCKET              unix socket 路径（设置后忽略 hostname/port）
+//	UPTIME_KUMA_DB_SSL                 是否启用 TLS
+//	UPTIME_KUMA_DB_CA                  自定义 CA（PEM）
+//	UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS 连接池上限，默认 10，范围 1–100
+//
+// 上述 *USERNAME / *PASSWORD / *SSL / *CA 四个支持 `_FILE` 后缀（docker secrets），
+// 两者同时设置会报错，与官方 getEnvOrFile 一致。
 package config
 
 import (
@@ -45,10 +61,31 @@ type Config struct {
 
 	// 数据保留
 	KeepHeartbeatDays int
+
+	// 存储后端：sqlite（默认）或 mariadb（外部 MySQL/MariaDB）
+	DBType     string
+	DBHostname string
+	DBPort     int
+	DBName     string
+	DBUsername string
+	DBPassword string
+	DBSocket   string
+	DBSSL      bool
+	DBCA       string
+	DBMaxConns int
 }
 
+// 数据库类型取值。
+const (
+	DBTypeSQLite  = "sqlite"
+	DBTypeMariaDB = "mariadb"
+)
+
+// IsMariaDB 是否使用外部 MySQL/MariaDB 作为存储。
+func (c *Config) IsMariaDB() bool { return c.DBType == DBTypeMariaDB }
+
 // Load 解析参数与环境变量。命令行优先于环境变量。
-func Load() *Config {
+func Load() (*Config, error) {
 	c := &Config{}
 
 	var (
@@ -98,7 +135,94 @@ func Load() *Config {
 	c.MaxConcurrentChecks = firstPositive(*maxChecks, envInt("UPTIME_KUMA_MAX_CONCURRENT_CHECKS"), 20)
 	c.KeepHeartbeatDays = firstPositive(*keepDays, envInt("UPTIME_KUMA_KEEP_HEARTBEAT_DAYS"), 365)
 
-	return c
+	if err := c.loadDatabase(); err != nil {
+		return nil, err
+	}
+
+	return c, nil
+}
+
+// loadDatabase 读取存储后端配置。
+//
+// 官方只接受 sqlite / mariadb 两种（embedded-mariadb 由官方镜像内置 mariadbd
+// 提供，go_server 不实现）。这里额外接受 mysql 作为 mariadb 的别名——官方对
+// `UPTIME_KUMA_DB_TYPE=mysql` 会抛 "Unknown Database type"，我们宽容一点，
+// 不改变任何既有行为。
+func (c *Config) loadDatabase() error {
+	c.DBType = strings.ToLower(strings.TrimSpace(os.Getenv("UPTIME_KUMA_DB_TYPE")))
+	switch c.DBType {
+	case "", DBTypeSQLite:
+		c.DBType = DBTypeSQLite
+		c.DBPort = 3306
+		c.DBName = "kuma"
+		c.DBMaxConns = 10
+		return nil
+	case DBTypeMariaDB, "mysql":
+		c.DBType = DBTypeMariaDB
+	default:
+		return fmt.Errorf("数据库类型不支持: %q（可选 sqlite / mariadb）", c.DBType)
+	}
+
+	var err error
+	if c.DBHostname = strings.TrimSpace(os.Getenv("UPTIME_KUMA_DB_HOSTNAME")); c.DBHostname == "" {
+		c.DBHostname = "127.0.0.1"
+	}
+	c.DBPort = firstPositive(envInt("UPTIME_KUMA_DB_PORT"), 3306)
+	if c.DBName = strings.TrimSpace(os.Getenv("UPTIME_KUMA_DB_NAME")); c.DBName == "" {
+		c.DBName = "kuma"
+	}
+	c.DBSocket = strings.TrimSpace(os.Getenv("UPTIME_KUMA_DB_SOCKET"))
+
+	if c.DBUsername, err = envOrFile("UPTIME_KUMA_DB_USERNAME"); err != nil {
+		return err
+	}
+	if c.DBPassword, err = envOrFile("UPTIME_KUMA_DB_PASSWORD"); err != nil {
+		return err
+	}
+	c.DBUsername = strings.TrimSpace(c.DBUsername)
+	if c.DBUsername == "" {
+		return fmt.Errorf("UPTIME_KUMA_DB_USERNAME 未设置（mariadb 模式必填）")
+	}
+
+	sslVal, err := envOrFile("UPTIME_KUMA_DB_SSL")
+	if err != nil {
+		return err
+	}
+	c.DBSSL = parseBool(sslVal)
+
+	if c.DBCA, err = envOrFile("UPTIME_KUMA_DB_CA"); err != nil {
+		return err
+	}
+	c.DBCA = strings.TrimSpace(c.DBCA)
+
+	// 官方语义：无效、<1、>100 都回落/截断，不报错
+	c.DBMaxConns = envInt("UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS")
+	if c.DBMaxConns < 1 {
+		c.DBMaxConns = 10
+	}
+	if c.DBMaxConns > 100 {
+		c.DBMaxConns = 100
+	}
+
+	return nil
+}
+
+// envOrFile 读取环境变量，或 `<name>_FILE` 指向的文件内容（docker secrets）。
+// 两者同时设置时报错，与官方 getEnvOrFile 一致。
+func envOrFile(name string) (string, error) {
+	direct := os.Getenv(name)
+	file := os.Getenv(name + "_FILE")
+	if direct != "" && file != "" {
+		return "", fmt.Errorf("Both %s and %s_FILE are set. Please use only one.", name, name)
+	}
+	if file != "" {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return "", fmt.Errorf("Failed to read %s_FILE at %s: %w", name, file, err)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	return direct, nil
 }
 
 // HealthcheckMode / PrintVersion 是 -healthcheck / -version 的一次性开关。
@@ -173,6 +297,10 @@ func envInt(key string) int {
 }
 
 func envBool(key string) bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
-	return v == "1" || v == "true" || v == "yes" || v == "on"
+	return parseBool(os.Getenv(key))
+}
+
+func parseBool(v string) bool {
+	s := strings.ToLower(strings.TrimSpace(v))
+	return s == "1" || s == "true" || s == "yes" || s == "on"
 }

@@ -203,6 +203,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B10 | ~~`/mcp`~~ | ✅ 2026-11-21 已补齐：JSON-RPC 2.0 over streamable HTTP，桥接 get_info/get_monitors；官方 MCP SDK 客户端交叉验证通过（connect/listTools/callTool/未知工具报错 5/5） |
 | B11 | `importantHeartbeatList` 推送 | 前端不消费，仅影响潜在移动端/API 消费者 |
 | B12 | `/metrics` 指标集（**归类修正**：原写在 C 级"等价实现"，实际是功能缺失） | 官方输出 7 个标准指标 `monitor_status` / `monitor_response_time` / `monitor_response_time_seconds` / `monitor_uptime_ratio`（1d/30d/365d 三档 window）/ `monitor_cert_days_remaining` / `monitor_cert_is_valid`，标签为 `monitor_id/name/type/url/hostname/port` + 每个 tag 名的动态 label；Go 只有 3 个自订 `gokuma_*` gauge。**后果**：照官方文档配的 Grafana 面板与告警规则在 Go 后端下全部取不到数据 |
+| B13 | ~~MariaDB / MySQL 存储后端~~ | ✅ 2026-11-21 已补齐（外部库）：`UPTIME_KUMA_DB_TYPE=mariadb` + `_HOSTNAME/_PORT/_NAME/_USERNAME/_PASSWORD/_SOCKET/_SSL/_CA/_POOL_MAX_CONNECTIONS`，四个敏感项支持 `_FILE`（docker secrets，同时设置报错）；启动先 `CREATE DATABASE IF NOT EXISTS ... CHARACTER SET utf8mb4`；连接串强制 `time_zone='+00:00'` + `parseTime=false`，对齐官方 mysql2 `timezone:"Z"` 与 DATETIME 原样返回；`schema_mysql.sql` 与 SQLite 逐表逐列一致（`TestSchemaParity`），时间列 `DATETIME(3)/TIMESTAMP(3)` 保毫秒，TEXT 不做主键、保留字全加反引号、索引内联；方言分支仅 6 处（information_schema 查表/列、两份 schema、`ON DUPLICATE KEY UPDATE`、`GREATEST`、`CAST AS SIGNED`、`[ident]`→反引号改写）。**未做**：`embedded-mariadb`（镜像内置 mariadbd 那套）；**未验证**：本机无 MySQL 环境，未做真库联调，DDL 语义按官方 knex 的 MySQL 产物逐条核对 |
 
 ### C. 等价实现（行为一致，机制不同）
 

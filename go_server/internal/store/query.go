@@ -115,7 +115,7 @@ func (d *DB) Insert(ctx context.Context, table string, values map[string]any) (i
 	q := fmt.Sprintf("INSERT INTO [%s] (%s) VALUES (%s)",
 		table, strings.Join(quoted, ","), strings.Join(marks, ","))
 
-	res, err := d.db.ExecContext(ctx, q, vals...)
+	res, err := d.exec(ctx, q, vals...)
 	if err != nil {
 		return 0, fmt.Errorf("插入 %s 失败: %w", table, err)
 	}
@@ -136,7 +136,7 @@ func (d *DB) Update(ctx context.Context, table string, id int64, values map[stri
 	vals = append(vals, id)
 
 	q := fmt.Sprintf("UPDATE [%s] SET %s WHERE id = ?", table, strings.Join(sets, ","))
-	if _, err := d.db.ExecContext(ctx, q, vals...); err != nil {
+	if _, err := d.exec(ctx, q, vals...); err != nil {
 		return fmt.Errorf("更新 %s(%d) 失败: %w", table, id, err)
 	}
 	return nil
@@ -145,7 +145,7 @@ func (d *DB) Update(ctx context.Context, table string, id int64, values map[stri
 // Delete 按主键删除。
 func (d *DB) Delete(ctx context.Context, table string, id int64) error {
 	q := fmt.Sprintf("DELETE FROM [%s] WHERE id = ?", table)
-	if _, err := d.db.ExecContext(ctx, q, id); err != nil {
+	if _, err := d.exec(ctx, q, id); err != nil {
 		return fmt.Errorf("删除 %s(%d) 失败: %w", table, id, err)
 	}
 	return nil
@@ -154,7 +154,7 @@ func (d *DB) Delete(ctx context.Context, table string, id int64) error {
 // DeleteWhere 按条件删除。
 func (d *DB) DeleteWhere(ctx context.Context, table, where string, args ...any) error {
 	q := fmt.Sprintf("DELETE FROM [%s] WHERE %s", table, where)
-	if _, err := d.db.ExecContext(ctx, q, args...); err != nil {
+	if _, err := d.exec(ctx, q, args...); err != nil {
 		return fmt.Errorf("按条件删除 %s 失败: %w", table, err)
 	}
 	return nil
@@ -162,7 +162,7 @@ func (d *DB) DeleteWhere(ctx context.Context, table, where string, args ...any) 
 
 // Query 执行查询并返回通用行集合。
 func (d *DB) Query(ctx context.Context, q string, args ...any) ([]Row, error) {
-	rows, err := d.db.QueryContext(ctx, q, args...)
+	rows, err := d.query(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func (d *DB) Exists(ctx context.Context, table, where string, args ...any) (bool
 
 // Exec 直接执行写语句。
 func (d *DB) Exec(ctx context.Context, q string, args ...any) (sql.Result, error) {
-	return d.db.ExecContext(ctx, q, args...)
+	return d.exec(ctx, q, args...)
 }
 
 func scanRows(rows *sql.Rows) ([]Row, error) {
@@ -256,13 +256,36 @@ func scanRows(rows *sql.Rows) ([]Row, error) {
 	return out, rows.Err()
 }
 
+// Tx 是事务句柄。内嵌 *sql.Tx 保留全部原生方法（如 PrepareContext），
+// 并覆盖 ExecContext / QueryContext / QueryRowContext 让 SQL 自动按方言改写
+// （SQLite 的 [ident] → MySQL 的反引号），所以事务里也能直接写现有 SQL。
+type Tx struct {
+	*sql.Tx
+	db *DB
+}
+
+// ExecContext 执行写语句。
+func (t *Tx) ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error) {
+	return t.Tx.ExecContext(ctx, t.db.rewriteSQL(q), args...)
+}
+
+// QueryContext 执行查询。
+func (t *Tx) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {
+	return t.Tx.QueryContext(ctx, t.db.rewriteSQL(q), args...)
+}
+
+// QueryRowContext 查询单行。
+func (t *Tx) QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row {
+	return t.Tx.QueryRowContext(ctx, t.db.rewriteSQL(q), args...)
+}
+
 // Tx 在事务中执行 fn。
-func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+func (d *DB) Tx(ctx context.Context, fn func(tx *Tx) error) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if err := fn(tx); err != nil {
+	if err := fn(&Tx{Tx: tx, db: d}); err != nil {
 		if rbErr := tx.Rollback(); rbErr != nil {
 			logx.Warnf("store", "回滚事务失败: %v", rbErr)
 		}

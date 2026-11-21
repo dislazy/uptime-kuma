@@ -10,8 +10,11 @@
 - 官方上游：`louislam/uptime-kuma`（本仓库 fork 自 `dislazy/uptime-kuma`）
 - 分支约定：`master` = 官方原版（不要动），`main` = 官方 + `go_server/`（工作分支）
 - **前端（根目录 `src/`）零改动**，Vue 源码原样复用，运行期由 Go 进程托管
-- **数据库完全兼容官方 SQLite schema**：老用户把 `kuma.db` 拷过来就能跑；
+- **数据库完全兼容官方 schema**：老用户把 `kuma.db` 拷过来就能跑；
   启动时 `ensureColumns` 按本仓库 `schema.sql` 给旧表自动补列，无需手工迁移
+- **支持外部 MySQL / MariaDB**（`UPTIME_KUMA_DB_TYPE=mariadb`）：表名/列名与 SQLite 完全一致，
+  两份建表脚本 `schema.sql` / `schema_mysql.sql` 由 `TestSchemaParity` 强制对齐；
+  连不上库时**不要**在代码里加 SQLite 专属语法，`TestNoSQLiteOnlySQLInSources` 会拦住
 - 通信协议：自实现 **Socket.IO v4 / Engine.IO v4**（polling + websocket 直连 + 升级），
   事件名、参数顺序、消息文案与官方逐一对应
 
@@ -27,7 +30,7 @@ go_server/
     ├── socketio/           # Engine.IO + Socket.IO 协议层（帧编解码、会话、ack）
     ├── auth/               # better-auth 兼容：sign-in/username、scrypt、cookie 签名、2FA
     ├── httpapi/            # REST：/api/auth/*、/api/setup、状态页公开接口、RSS、badge
-    ├── store/              # SQLite（modernc.org/sqlite 纯 Go）：schema、CRUD、列名自适应
+    ├── store/              # SQLite / MySQL 双后端：schema、CRUD、列名自适应、方言改写
     ├── model/              # Monitor 等结构体；Raw 保留原始行，按需取列
     ├── checkers/           # 34 种监控类型，一类型一文件，init() 里 Register
     ├── monitor/            # 调度器（时间轮 + worker 池）、group 聚合

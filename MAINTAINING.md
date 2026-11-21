@@ -160,9 +160,16 @@ git log b0cd0f1d..master --oneline
 
 **改数据库 schema**
 
-1. 改 `internal/store/schema.sql`（新列/新表）
-2. 老库兼容：`ensureColumns`（补列）/ `ensureTables`（补表）会自动处理，但要确认真实老库能起来
-3. 验证方式：拿一个**旧版 Go 或官方版**的 `kuma.db` 启动新二进制，看是否报错
+1. **两份都要改**：`internal/store/schema.sql`（SQLite）和 `internal/store/schema_mysql.sql`（MySQL）。
+   `TestSchemaParity` 逐表逐列比对，只改一份会直接失败
+2. MySQL 侧的类型翻译规则：`INTEGER PRIMARY KEY AUTOINCREMENT`→`INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY`、
+   `BOOLEAN`→`TINYINT(1)`、`REAL`→`DOUBLE`、`DATETIME`→`DATETIME(3)`（带毫秒）、
+   `TEXT ... DEFAULT 'x'`→`DEFAULT ('x')`、索引内联 `KEY`/`UNIQUE KEY`、所有标识符加反引号；
+   **TEXT 不能做主键或唯一索引**，需改 `VARCHAR(255)`
+3. 老库兼容：`ensureColumns`（补列）/`ensureTables`（补表）会自动处理，但要确认真实老库能起来
+4. 验证方式：拿一个**旧版 Go 或官方版**的 `kuma.db` 启动新二进制，看是否报错
+5. 写 SQL 的方言限制（`PRAGMA`/`ON CONFLICT`/`excluded.`/`CAST AS INTEGER`/派生表别名）
+   由 `TestNoSQLiteOnlySQLInSources` 扫描源码守护，改动后再跑一次 `go test ./internal/store/`
 
 ---
 
@@ -175,6 +182,7 @@ git log b0cd0f1d..master --oneline
 | 纯文档 | 无 | — |
 | 单个 checker / provider | 单测 + 编译 | `go build ./... && go test ./internal/checkers/ -count=1` |
 | store / schema | 单测 + 老库启动 | `go test ./internal/store/ -count=1` + 老 `kuma.db` 冒烟 |
+| store 方言（涉及 SQL / schema） | 上述 + 两份 schema 对齐 | `go test ./internal/store/ -run 'Schema\|SQL\|DSN' -v`（`TestSchemaParity`、`TestNoSQLiteOnlySQLInSources`） |
 | socket 事件 | **必须真连 socket** | 起服务 + `node` 脚本用 `socket.io-client@4` 走完整流程 |
 | REST 路由 | curl/HTTP 断言 | 参照 `API-PARITY.md` 附录命令 |
 | 协议层（socketio / MCP / Playwright） | **必须对接真实对端** | socket 用官方客户端库；MCP 用 `@modelcontextprotocol/client`；远程浏览器用真 `launchServer` |
@@ -304,6 +312,8 @@ grep -n "直接对齐 40 条\|REST 路由（生产挂载）\|Socket 事件（客
 | `/screenshots/*` 静态外链 | 不实现 | real-browser 不落截图产物，等价偏差 |
 | `importantHeartbeatList` 推送 | 暂不实现 | 前端不消费 |
 | `/metrics` 完整指标集（B12） | **暂不做**（2026-11-21 决定） | 需要 7 个标准指标 + 动态 tag label；当前只有 3 个 `gokuma_*` gauge，官方 Grafana 面板接不上 |
+| `embedded-mariadb` 存储 | **不做** | 要把 `mariadbd` 打进镜像（约 +430MB）并实现 datadir 初始化、socket 启动；外部 MariaDB 已覆盖生产用法 |
+| MySQL/MariaDB 真库联调 | **未做**（2026-11-21） | 开发机不装数据库（用户要求）；DDL 与方言按官方 knex 的 MySQL 产物逐条核对，靠 `TestSchemaParity` 与源码扫描兜底。**上线前建议在一台有 MySQL 的环境跑一次首次建库 + 老库接管** |
 | C 级"等价实现"5 项 | 不动 | 行为一致，机制不同，改了没有收益 |
 
 **新增缺口的记录方式**：先在 `API-PARITY.md` §5 分好级（A 安全 / B 功能 / C 等价 / D 占位 / E 不适用），再决定做不做。**分级要诚实**——把功能缺失写成"等价实现"会让以后的自己误判，`/metrics` 就是这么被纠回来的。

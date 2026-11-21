@@ -597,7 +597,7 @@ func importantPaged(c *Ctx) (any, error) {
 			SELECT * FROM (
 				SELECT * FROM heartbeat WHERE important = 1
 				ORDER BY time DESC LIMIT ? OFFSET ?
-			) ORDER BY time ASC`, limit, offset)
+			) AS t ORDER BY time ASC`, limit, offset)
 		if e == nil {
 			for _, r := range rows {
 				b := model.Beat{

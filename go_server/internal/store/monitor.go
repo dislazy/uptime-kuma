@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
@@ -102,7 +101,7 @@ func (s *MonitorStore) SetColumn(ctx context.Context, id int64, column string, v
 // Delete 删除监控，并清理关联表。
 // 官方库开启了外键级联，这里仍显式清理，兼容关闭外键的老库。
 func (s *MonitorStore) Delete(ctx context.Context, id int64) error {
-	return s.db.Tx(ctx, func(tx *sql.Tx) error {
+	return s.db.Tx(ctx, func(tx *Tx) error {
 		for _, t := range []struct{ table, col string }{
 			{"monitor_notification", "monitor_id"},
 			{"monitor_tag", "monitor_id"},

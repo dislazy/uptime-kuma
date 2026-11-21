@@ -30,16 +30,35 @@ func (s *StatsStore) UpsertMinutely(ctx context.Context, monitorID, minuteTS, pi
 		return nil
 	}
 
-	q := `INSERT INTO stat_minutely (monitor_id, timestamp, ping, up, down)
-	      VALUES (?, ?, ?, ?, ?)
-	      ON CONFLICT(monitor_id, timestamp) DO UPDATE SET
-	          ping = (stat_minutely.ping * (stat_minutely.up + stat_minutely.down) + excluded.ping)
-	                 / MAX(stat_minutely.up + stat_minutely.down + 1, 1),
-	          up   = stat_minutely.up + excluded.up,
-	          down = stat_minutely.down + excluded.down`
-
-	_, err := s.db.Exec(ctx, q, monitorID, minuteTS, ping, up, down)
+	_, err := s.db.Exec(ctx, upsertMinutelySQL(s.db), monitorID, minuteTS, ping, up, down)
 	return err
+}
+
+// upsertMinutelySQL 返回当前方言的分钟聚合 UPSERT 语句。
+//
+// 两种方言的写法差异：
+//
+//	SQLite  ON CONFLICT(...) DO UPDATE + excluded.x + MAX(a,b)
+//	MySQL   ON DUPLICATE KEY UPDATE + VALUES(x) + GREATEST(a,b)
+//
+// MySQL 的 MAX() 是聚合函数，两参数取大必须用 GREATEST，这是最容易写错的一处。
+func upsertMinutelySQL(db *DB) string {
+	if db.isMySQL() {
+		return `INSERT INTO stat_minutely (monitor_id, timestamp, ping, up, down)
+		        VALUES (?, ?, ?, ?, ?)
+		        ON DUPLICATE KEY UPDATE
+		            ping = (stat_minutely.ping * (stat_minutely.up + stat_minutely.down) + VALUES(ping))
+		                   / GREATEST(stat_minutely.up + stat_minutely.down + 1, 1),
+		            up   = stat_minutely.up + VALUES(up),
+		            down = stat_minutely.down + VALUES(down)`
+	}
+	return `INSERT INTO stat_minutely (monitor_id, timestamp, ping, up, down)
+	        VALUES (?, ?, ?, ?, ?)
+	        ON CONFLICT(monitor_id, timestamp) DO UPDATE SET
+	            ping = (stat_minutely.ping * (stat_minutely.up + stat_minutely.down) + excluded.ping)
+	                   / MAX(stat_minutely.up + stat_minutely.down + 1, 1),
+	            up   = stat_minutely.up + excluded.up,
+	            down = stat_minutely.down + excluded.down`
 }
 
 // RollupHourly 把 [before-window, before) 的分钟数据聚合成小时数据（幂等）。
@@ -54,11 +73,28 @@ func (s *StatsStore) RollupDaily(ctx context.Context, beforeHour int64) error {
 }
 
 func (s *StatsStore) rollup(ctx context.Context, src, dst string, bucket, before, from int64) error {
-	// 已是聚合行，直接按桶重算，避免重复累加
+	// 已是聚合行，直接按桶重算，避免重复累加。
+	//
+	// 方言差异两处：
+	//   - CAST(... AS INTEGER) —— MySQL 没有 INTEGER 这个转换目标，要用 SIGNED；
+	//   - ON CONFLICT / excluded.x —— MySQL 用 ON DUPLICATE KEY UPDATE / VALUES(x)。
+	castType := "INTEGER"
+	upsert := `ON CONFLICT(monitor_id, timestamp) DO UPDATE SET
+		    ping = excluded.ping,
+		    up   = excluded.up,
+		    down = excluded.down`
+	if s.db.isMySQL() {
+		castType = "SIGNED"
+		upsert = `ON DUPLICATE KEY UPDATE
+		    ping = VALUES(ping),
+		    up   = VALUES(up),
+		    down = VALUES(down)`
+	}
+
 	q := fmt.Sprintf(`
 		INSERT INTO %[2]s (monitor_id, timestamp, ping, up, down)
 		SELECT monitor_id,
-		       CAST(timestamp / %[3]d AS INTEGER) * %[3]d AS bucket,
+		       CAST(timestamp / %[3]d AS %[4]s) * %[3]d AS bucket,
 		       CASE WHEN SUM(up + down) > 0
 		            THEN SUM(ping * (up + down)) / SUM(up + down)
 		            ELSE 0 END,
@@ -67,10 +103,7 @@ func (s *StatsStore) rollup(ctx context.Context, src, dst string, bucket, before
 		FROM %[1]s
 		WHERE timestamp < ? AND timestamp >= ?
 		GROUP BY monitor_id, bucket
-		ON CONFLICT(monitor_id, timestamp) DO UPDATE SET
-		    ping = excluded.ping,
-		    up   = excluded.up,
-		    down = excluded.down`, src, dst, bucket)
+		%[5]s`, src, dst, bucket, castType, upsert)
 
 	_, err := s.db.Exec(ctx, q, before, from)
 	return err
