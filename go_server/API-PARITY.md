@@ -202,13 +202,19 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B9 | ~~`refresh` / `initServerTimezone` 推送~~ | ✅ 2026-11-21 已补齐：首登推时区初始化、踢人前 refresh 让被踢端自动刷新；E2E 验证首登收到、二次登录不再推、被踢端收 refresh 后断开 |
 | B10 | ~~`/mcp`~~ | ✅ 2026-11-21 已补齐：JSON-RPC 2.0 over streamable HTTP，桥接 get_info/get_monitors；官方 MCP SDK 客户端交叉验证通过（connect/listTools/callTool/未知工具报错 5/5） |
 | B11 | `importantHeartbeatList` 推送 | 前端不消费，仅影响潜在移动端/API 消费者 |
+| B12 | `/metrics` 指标集（**归类修正**：原写在 C 级"等价实现"，实际是功能缺失） | 官方输出 7 个标准指标 `monitor_status` / `monitor_response_time` / `monitor_response_time_seconds` / `monitor_uptime_ratio`（1d/30d/365d 三档 window）/ `monitor_cert_days_remaining` / `monitor_cert_is_valid`，标签为 `monitor_id/name/type/url/hostname/port` + 每个 tag 名的动态 label；Go 只有 3 个自订 `gokuma_*` gauge。**后果**：照官方文档配的 Grafana 面板与告警规则在 Go 后端下全部取不到数据 |
 
 ### C. 等价实现（行为一致，机制不同）
 
 - monitor 列表增量更新 → 全量广播；heartbeatLists 聚合 → 逐监控 heartbeatList；前端处理结果相同。
 - badge 缓存：官方 apicache 5 分钟，Go 发 `no-store`（实时性更高，QPS 高时开销更大）。
 - 静态资源：官方 express-static-gzip（brotli 预压缩），Go net/http 原生（无 br，有 gzip 需反代开启）。
-- `/metrics` 指标集：官方完整 Prometheus 指标，Go 仅 3 个自订 gauge（`gokuma_*`）。
+- badge SVG 渲染：官方 `badge-maker` 用 Verdana 精确字宽表 + 支持 `style=flat|flat-square|plastic|for-the-badge`；
+  Go 自实现按 6.6px/字符估算宽度（`renderBadge`），**忽略 `style` 参数**。图形语义（颜色/文案/两段式）一致，尺寸与边距有像素级差异。
+- `/api/info`：官方 `latestVersion` 是启动时查 GitHub Releases 的结果、`isContainer` 读 `UPTIME_KUMA_IS_CONTAINER` 环境变量；
+  Go 分别取自身版本号、恒 `true`。字段形状一致，值语义不同（Go 不做外网版本探测）。
+- MCP 传输层：坏 JSON 官方是 `express.json()` 的 400 空 body，Go 给规范化 `-32700 "Parse error"`；
+  请求体上限 Go 4MB vs express 默认 100KB。JSON-RPC 语义与工具结果完全一致。
 
 ### D. 占位（有意不实现，返回合法空结果）
 
