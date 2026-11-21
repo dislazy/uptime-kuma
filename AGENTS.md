@@ -77,5 +77,7 @@ The frontend (`src/`) is reused unmodified, and `master` stays identical to upst
 
 - **Agents taking over work on this fork**: read [`go_server/AGENTS.md`](go_server/AGENTS.md) first —
   it has the directory map, current status, build/test commands, hard conventions and known pitfalls.
+- **Overview of this fork**: [`GO-SERVER.md`](GO-SERVER.md) (README.md stays identical to upstream).
 - The `master` branch policy above applies to upstream PRs only; work on this fork happens on `main`.
 - Syncing upstream changes: see [`go_server/SYNC.md`](go_server/SYNC.md).
+- API parity audit (REST + socket events, every route/event compared): [`go_server/API-PARITY.md`](go_server/API-PARITY.md).
