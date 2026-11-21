@@ -219,7 +219,7 @@ go test ./... -count=1
 **打 `v*` tag（或手动 dispatch）→ 才发版构建**
 1. 构建前端（Vue → dist，打进镜像）
 2. `go vet` + `go test`
-3. 交叉编译 linux/amd64 + arm64（版本号注入 `${package.json版本}-go.${短sha}`）
+3. 交叉编译 linux/amd64 + arm64（版本号注入 `<tag去掉v>-go.${短sha}`；手动 dispatch 无 tag 时回落 `package.json` 版本）
 4. 组装多架构镜像推 GHCR：`x.y.z` / `x.y` / `x` / `latest` / `sha-<sha>`
 5. **冒烟测试**：真起容器，轮询 `/api/health` 等 `{"ok":true}`
 
@@ -244,7 +244,7 @@ go test ./... -count=1
 | --- | --- | --- |
 | 前端 `package.json` 的 `version` | 官方版本（如 `3.0.0-beta.1`） | 官方，合并自动更新 |
 | `go_server/internal/version/version.go` 的 `Version` | 本地开发默认值（如 `3.0.0-go.1`） | 手工 |
-| 运行时实际版本 | `${package.json版本}-go.${短sha}` | **CI 用 `-ldflags -X` 注入，覆盖 Go 默认值** |
+| 运行时实际版本 | 发版构建 `<tag>-go.${短sha}`，dispatch 构建 `${package.json版本}-go.${短sha}` | **CI 用 `-ldflags -X` 注入，覆盖 Go 默认值**；`package.json` 必须与 upstream 保持一致，不能拿它当发版版本号 |
 
 也就是说：本地跑 `go run ./cmd/go_server` 看到的是 `version.go` 里的默认串，镜像里看到的是带 sha 的真实版本。**判断线上跑的是哪个构建，看版本号尾部的 sha。**
 

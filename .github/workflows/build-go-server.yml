@@ -129,8 +129,17 @@ jobs:
       - name: Prepare version info
         id: meta
         run: |
-          FE_VERSION=$(grep -m1 '"version"' package.json | sed 's/.*"\(.*\)".*/\1/')
-          echo "VERSION=${FE_VERSION}-go.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          # 发版构建以 tag 为准：镜像标签是 3.1.0，界面上也必须报 3.1.0，
+          # 否则 /api/info 里还是 package.json 的 3.0.0-beta.1，排查问题时对不上。
+          # 手动 dispatch 没有 tag，回落到 package.json 版本。
+          # 注意 package.json 必须与 upstream 保持一致（见 MAINTAINING.md 分支模型），
+          # 所以不能靠改它来发版。
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            BASE="${GITHUB_REF_NAME#v}"
+          else
+            BASE=$(grep -m1 '"version"' package.json | sed 's/.*"\(.*\)".*/\1/')
+          fi
+          echo "VERSION=${BASE}-go.${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
