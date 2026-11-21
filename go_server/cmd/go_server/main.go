@@ -22,6 +22,7 @@ import (
 	"github.com/dislazy/uptime-kuma/go_server/internal/auth"
 	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
 	"github.com/dislazy/uptime-kuma/go_server/internal/config"
+	"github.com/dislazy/uptime-kuma/go_server/internal/domainexpiry"
 	"github.com/dislazy/uptime-kuma/go_server/internal/handlers"
 	"github.com/dislazy/uptime-kuma/go_server/internal/httpapi"
 	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
@@ -117,6 +118,10 @@ func run(cfg *config.Config) error {
 
 	mgr := monitor.NewManager(db, monitorStore, beatStore, statsStore, h, engine, tlsStore, settings, cfg.MaxConcurrentChecks)
 
+	// 域名到期：RDAP 服务单例（checkDomain 事件与心跳钩子共享缓存）
+	domainSvc := domainexpiry.NewService(settings)
+	mgr.SetDomainExpiry(domainSvc)
+
 	// 维护窗口：状态由运行时算，监控调度前会先问一遍
 	serverTZ := settings.GetString(ctx, "serverTimezone", serverTimezone())
 	maintMgr := maintenance.New(maintStore, h, serverTZ)
@@ -133,6 +138,7 @@ func run(cfg *config.Config) error {
 		Notif: notifStore, Set: settings, Tag: tagStore,
 		Maint: maintStore, StatusPage: statusPageStore,
 		Auth: authSvc, Hub: h, Mgr: mgr, MaintMgr: maintMgr, Eng: engine,
+		DomainSvc: domainSvc,
 		StartedAt: time.Now(),
 	}
 	handlers.Register(sockSrv, deps)

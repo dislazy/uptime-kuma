@@ -578,17 +578,40 @@ func disconnectOtherSocketClients(c *Ctx) (any, error) {
 	return map[string]any{"ok": true}, nil
 }
 
-// ---------------- 周边功能占位 ----------------
-//
-// 这些能力依赖外部组件（RDAP、pm2、Chromium），P1 不实现，
-// 但必须返回结构合法的结果，否则前端会弹错误提示甚至中断保存流程。
+// ---------------- 域名到期（RDAP） ----------------
 
-// checkDomain 检查域名到期支持情况。
+// checkDomain 检查域名到期支持情况，对齐官方 server.js:721：
+// checkLogin → DomainExpiry.checkSupport → {ok, domain, tld}；
+// 失败回 {ok:false, msg:i18n key, msgi18n:true, meta}。
 func checkDomain(c *Ctx) (any, error) {
+	if err := c.RequireLogin(); err != nil {
+		return nil, err
+	}
+
 	var partial map[string]any
 	_ = c.OptArg(0, &partial)
-	return map[string]any{"ok": true, "domain": "", "tld": ""}, nil
+
+	typ := asString(partial["type"])
+	targetURL := asString(partial["url"])
+	hostname := asString(partial["hostname"])
+	grpcURL := asString(partial["grpcUrl"])
+
+	domain, tld, serr := c.DomainSvc.CheckSupport(c.Ctx, typ, targetURL, hostname, grpcURL)
+	if serr != nil {
+		meta := serr.Meta
+		if meta == nil {
+			// 官方：e.meta ?? {} 兜底空对象
+			meta = map[string]any{}
+		}
+		return map[string]any{"ok": false, "msg": serr.Msg, "msgi18n": true, "meta": meta}, nil
+	}
+	return map[string]any{"ok": true, "domain": domain, "tld": tld}, nil
 }
+
+// ---------------- 周边功能占位 ----------------
+//
+// 这些能力依赖外部组件（pm2、Chromium），P1 不实现，
+// 但必须返回结构合法的结果，否则前端会弹错误提示甚至中断保存流程。
 
 // getGameList 返回 gamedig 支持的协议列表，当前为空。
 func getGameList(c *Ctx) (any, error) {

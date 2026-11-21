@@ -40,8 +40,10 @@ Node.js 后端 + Vue 前端的自托管监控工具）。在此之上，**用 Go
 
 **API 对齐的精确程度**：全部 REST 路由与 socket 事件已逐条审计，
 结果在 [`go_server/API-PARITY.md`](go_server/API-PARITY.md) ——
-直接对齐 40 条 REST 中的 33 条、76 个 socket 事件中的 66 个；
-剩余缺口集中在域名到期信息（RDAP/whois）、`/api/docs` 文档页等周边功能
+直接对齐 40 条 REST 中的 34 条、76 个 socket 事件中的 71 个、
+23 个推送中的 17 个；域名到期（RDAP）、TLS 证书、Proxy、远程浏览器、
+状态页徽章等 B 级缺口已按官方逻辑补齐，
+剩余缺口集中在 `/api/docs` 文档页等低影响周边
 （Cloudflared 隧道管理明确不做——部署机直连公网时无使用场景），
 审计文档按安全/功能/等价/占位四级分好类，可直接当 TODO 清单用。
 

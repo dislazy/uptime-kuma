@@ -11,7 +11,7 @@
 | REST 路由（生产挂载） | 40 | 34 | — | 6 | `/metrics` 鉴权、`/api/status-page/:slug/badge` 已对齐官方（2026-11-21 修复），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
 | Socket 事件（客户端→服务端） | 76 | 71 | — | 5 | proxy/remote-browser 已补齐（2026-11-21）；缺失只剩 cloudflared×5（明确不做），见 §3 |
-| Socket 推送（服务端→客户端） | 23 | 16 | 3 | 4 | 前端 UI 实际受影响的只剩 domainInfo（域名 whois），见 §4 |
+| Socket 推送（服务端→客户端） | 23 | 17 | 3 | 3 | domainInfo 已补齐（2026-11-21，RDAP）；剩余缺失均无 UI 影响（importantHeartbeatList/refresh/initServerTimezone），见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
 > better-auth 只计前端 `authClient.*` 实际调用的端点；socket 按注册名逐条计。
@@ -124,7 +124,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `addNotification` / `deleteNotification` / `testNotification` | ✅ | |
 | `checkApprise` | ✅ | |
 | `clearEvents` / `clearHeartbeats` / `clearStatistics` | ✅ | |
-| `checkDomain` | ✅ | 占位实现（返回空域名），RDAP 未接 |
+| `checkDomain` | ✅ | 2026-11-21 补齐真实现：四层校验（类型清单/空目标/非 ICANN/无 RDAP 端点）对齐官方 checkSupport，错误回 i18n key + msgi18n + meta，见 §3.2 domain_expiry |
 | `getWebpushVapidPublicKey` | ✅ | |
 
 ### 3.2 各 socket-handler 文件（47 条）
@@ -165,7 +165,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `heartbeatLists` | ≈ 等价 | 官方登录后聚合一包；Go 逐监控发 `heartbeatList`，前端两个监听器效果相同 |
 | `importantHeartbeatList` | ❌ | 官方会推但**前端不监听**（socket.js 无注册），仅移动端/API 消费；无 UI 影响 |
 | `certInfo` | ✅ | 2026-11-21 补齐：https 握手后采集证书链（对齐 readTlsInfo/parseCertificateInfo 形状，含嵌套 issuerCertificate 与 certType），落库 monitor_tls_info 并推送。E2E 与 openssl 逐秒一致 |
-| `domainInfo` | ❌ | 域名到期信息未采集（依赖 checkDomain 的 RDAP，Go 未接） |
+| `domainInfo` | ✅ | 2026-11-21 补齐：心跳后 RDAP 查询域名到期日（一天缓存、IANA 映射表周缓存+落库+内嵌兜底），60 秒节流推送 `(monitorID, daysRemaining, expiresOn)`；domain_expiry_notification 开启时按 domainExpiryNotifyDays 阈值发通知。E2E 与 Verisign RDAP 逐秒一致 |
 | `proxyList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，proxy CRUD 已补齐，见 §3.2） |
 | `remoteBrowserList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，remote-browser CRUD 已补齐，见 §3.2） |
 | `dockerHostList` / `maintenanceList` / `notificationList` / `statusPageList` / `monitorTypeList` / `stats` | ✅ | |
@@ -195,7 +195,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | B4 | Cloudflared Tunnel（5 事件） | **明确不做**（2026-11-21 决策）：部署机有公网直连，隧道无使用场景；官方实现还要管理 cloudflared 二进制进程，收益/成本比最低。Cloudflared 设置页在 Go 后端下不可用 |
 | B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |
 | B6 | ~~`/api/status-page/:slug/badge`~~ | ✅ 2026-11-21 已补齐：整体徽章四态（Up/Degraded/Maintenance/N-A）官方同序判定，E2E 验证混合→黄 Degraded、全 UP→绿、坏 slug→灰 N/A |
-| B7 | `domainInfo` + checkDomain（RDAP） | 域名到期信息缺失（TLS 证书到期已由 B1 覆盖，此项是域名 whois，另一条线） |
+| B7 | ~~`domainInfo` + checkDomain（RDAP）~~ | ✅ 2026-11-21 已补齐：`internal/domainexpiry` 包（IANA rdap/dns.json 周缓存+settings 落库+官方 extra/rdap-dns.json 内嵌兜底）、checkDomain 四层校验错误 i18n、checkExpiry 一天缓存、domainExpiryNotifyDays 阈值通知、60 秒节流 domainInfo 推送。E2E 真打 Verisign RDAP，example.com 到期日逐秒一致；`.gov.cn` 无 RDAP 端点按官方报 no-rdap |
 | B8 | `/robots.txt`、`/.well-known/change-password` | 低影响 |
 | B9 | `refresh` / `initServerTimezone` 推送 | 体验细节（被踢端不自动刷新；时区初始化弹窗不出现） |
 | B10 | `/mcp` | 上游新功能（AI 工具接入），独立协议栈，暂缓 |
@@ -210,7 +210,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 
 ### D. 占位（有意不实现，返回合法空结果）
 
-`checkDomain`（RDAP）、`getGameList`、`getPM2ProcessList`（官方 PM2 进程管理，Node 专属）、`testChrome`、better-auth admin/HIBP/forget-password 端点（501）。
+`getGameList`、`getPM2ProcessList`（官方 PM2 进程管理，Node 专属）、`testChrome`、better-auth admin/HIBP/forget-password 端点（501）。
 
 ### E. 不适用
 

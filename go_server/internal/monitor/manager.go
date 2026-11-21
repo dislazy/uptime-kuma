@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
+	"github.com/dislazy/uptime-kuma/go_server/internal/domainexpiry"
 	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
 	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 	"github.com/dislazy/uptime-kuma/go_server/internal/model"
@@ -40,6 +41,9 @@ type Manager struct {
 	tls    *store.TLSInfoStore
 	set    *store.Settings
 
+	domains   *store.DomainExpiryStore
+	domainSvc *domainexpiry.Service
+
 	maxConcurrent int
 	sem           chan struct{}
 
@@ -51,6 +55,10 @@ type Manager struct {
 
 	statsMu    sync.Mutex
 	statsCache map[int64]cachedStats
+
+	// domainInfo 60 秒节流（官方 INFO_REFRESH_INTERVAL_MS）
+	domainInfoMu   sync.Mutex
+	domainInfoSent map[int64]time.Time
 
 	stopOnce sync.Once
 	stop     chan struct{}
@@ -340,6 +348,16 @@ func (mgr *Manager) SetMaintenance(fn func(monitorID int64) bool) {
 	mgr.mu.Unlock()
 }
 
+// SetDomainExpiry 注入域名到期服务（RDAP），未注入时该功能静默关闭。
+func (mgr *Manager) SetDomainExpiry(svc *domainexpiry.Service) {
+	mgr.mu.Lock()
+	mgr.domainSvc = svc
+	if svc != nil {
+		mgr.domains = store.NewDomainExpiryStore(mgr.db)
+	}
+	mgr.mu.Unlock()
+}
+
 // underMaintenance 沿 parent 链判断维护态：
 // 分组处于维护中时，组内监控同样视为维护中（与官方 isUnderMaintenance 一致）。
 func (mgr *Manager) underMaintenance(mon *model.Monitor) bool {
@@ -580,6 +598,14 @@ func (mgr *Manager) record(ctx context.Context, st *state, res checkers.Result, 
 	if res.TLS != nil {
 		mgr.handleTLSInfo(ctx, mon, res.TLS)
 	}
+
+	// 域名到期（官方 monitor.js:1046：!MAINTENANCE && domainExpiryNotification）
+	if beat.Status != model.StatusMaintenance && mon.GetBool("domain_expiry_notification") {
+		mgr.handleDomainExpiry(ctx, mon)
+	}
+
+	// domainInfo 推送（官方 sendStats 里的 60 秒节流）
+	mgr.maybeSendDomainInfo(ctx, mon)
 
 	// 实时广播
 	payload := beat.JSON()

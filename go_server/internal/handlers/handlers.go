@@ -20,6 +20,7 @@ import (
 	"github.com/dislazy/uptime-kuma/go_server/internal/checkers"
 	"github.com/dislazy/uptime-kuma/go_server/internal/conditions"
 	"github.com/dislazy/uptime-kuma/go_server/internal/config"
+	"github.com/dislazy/uptime-kuma/go_server/internal/domainexpiry"
 	"github.com/dislazy/uptime-kuma/go_server/internal/hub"
 	"github.com/dislazy/uptime-kuma/go_server/internal/logx"
 	"github.com/dislazy/uptime-kuma/go_server/internal/maintenance"
@@ -47,6 +48,7 @@ type Deps struct {
 	Mgr        *monitor.Manager
 	MaintMgr   *maintenance.Manager
 	Eng        *notify.Engine
+	DomainSvc  *domainexpiry.Service
 
 	StartedAt time.Time
 }
@@ -294,8 +296,10 @@ func registerEvents(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.On("getAPIKeyList", wrap(getAPIKeyList))
 	sock.On("deleteAPIKey", wrap(deleteAPIKey))
 
-	// —— 尚未实现的周边功能：返回明确的占位结果，避免前端弹错误提示 ——
+	// —— 域名到期（对齐官方 server.js:721 checkDomain）——
 	sock.On("checkDomain", wrap(checkDomain))
+
+	// —— 尚未实现的周边功能：返回明确的占位结果，避免前端弹错误提示 ——
 	sock.On("getGameList", wrap(getGameList))
 	sock.On("getPM2ProcessList", wrap(getPM2ProcessList))
 	sock.On("testChrome", wrap(testChrome))
