@@ -97,6 +97,14 @@ func (d *DB) Migrate(ctx context.Context) error {
 		if err := d.ensureColumns(ctx); err != nil {
 			logx.Warnf("store", "补列迁移未完成: %v", err)
 		}
+		// 老库也可能缺后来新增的整张表（如 better_auth_apikey），按 CREATE TABLE
+		// IF NOT EXISTS 原样补建；索引只对新建的表执行，避免碰官方既有表的列差异。
+		if err := d.ensureTables(ctx); err != nil {
+			logx.Warnf("store", "补表迁移未完成: %v", err)
+		}
+		if err := d.backfillAPIKeyReferenceID(ctx); err != nil {
+			logx.Warnf("store", "apikey referenceId 回填未完成: %v", err)
+		}
 		d.warmCache(ctx)
 		d.reportMissing(ctx)
 		return nil
@@ -220,6 +228,107 @@ func (d *DB) HasTable(ctx context.Context, table string) bool {
 	d.table[table] = ok
 	d.mu.Unlock()
 	return ok
+}
+
+// ensureTables 在接管既有库时补建 schema.sql 里新增、但库里还没有的表。
+//
+// 只执行 CREATE TABLE IF NOT EXISTS（幂等），索引语句仅针对本次新建的表执行，
+// 不触碰官方既有表的索引定义，避免列差异导致的意外报错。
+func (d *DB) ensureTables(ctx context.Context) error {
+	raw, err := schemaFS.ReadFile("schema.sql")
+	if err != nil {
+		return fmt.Errorf("读取 schema.sql 失败: %w", err)
+	}
+
+	created := map[string]bool{}
+	for _, stmt := range splitStatements(string(raw)) {
+		s := strings.TrimSpace(stmt)
+		table, ok := createTableName(s)
+		if !ok {
+			continue
+		}
+		exists, err := d.tableExists(ctx, table)
+		if err != nil || exists {
+			continue
+		}
+		if _, err := d.db.ExecContext(ctx, stmt); err != nil {
+			logx.Warnf("store", "补表 %s 失败: %v", table, err)
+			continue
+		}
+		logx.Infof("store", "已补表 %s", table)
+		created[table] = true
+	}
+
+	if len(created) > 0 {
+		for _, stmt := range splitStatements(string(raw)) {
+			s := strings.TrimSpace(stmt)
+			table, ok := indexTableName(s)
+			if !ok || !created[table] {
+				continue
+			}
+			if _, err := d.db.ExecContext(ctx, stmt); err != nil {
+				logx.Warnf("store", "补索引失败: %v\nSQL: %s", err, truncate(stmt, 120))
+			}
+		}
+	}
+	return nil
+}
+
+// createTableName 从 "CREATE TABLE IF NOT EXISTS [x] (...)" 里取表名。
+func createTableName(stmt string) (string, bool) {
+	const prefix = "CREATE TABLE IF NOT EXISTS"
+	if !strings.HasPrefix(stmt, prefix) {
+		return "", false
+	}
+	rest := strings.TrimSpace(strings.TrimPrefix(stmt, prefix))
+	if !strings.HasPrefix(rest, "[") {
+		return "", false
+	}
+	end := strings.Index(rest, "]")
+	if end < 0 {
+		return "", false
+	}
+	return rest[1:end], true
+}
+
+// indexTableName 从 "CREATE [UNIQUE] INDEX IF NOT EXISTS name ON [x] (...)" 里取表名。
+func indexTableName(stmt string) (string, bool) {
+	if !strings.HasPrefix(stmt, "CREATE INDEX IF NOT EXISTS") && !strings.HasPrefix(stmt, "CREATE UNIQUE INDEX IF NOT EXISTS") {
+		return "", false
+	}
+	i := strings.Index(stmt, " ON [")
+	if i < 0 {
+		return "", false
+	}
+	rest := stmt[i+len(" ON ["):]
+	end := strings.Index(rest, "]")
+	if end < 0 {
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// backfillAPIKeyReferenceID 把早期 go_server 自建库里的 userId 列值
+// 迁到官方列名 referenceId 上（2026-11 起对齐官方 2026-06-29 迁移）。
+func (d *DB) backfillAPIKeyReferenceID(ctx context.Context) error {
+	exists, err := d.tableExists(ctx, "better_auth_apikey")
+	if err != nil || !exists {
+		return nil
+	}
+	cols := d.Columns(ctx, "better_auth_apikey")
+	// PRAGMA 返回的列名保持声明时的大小写，两种历史拼法都认
+	if !(cols["referenceId"] || cols["referenceid"]) || !(cols["userId"] || cols["userid"]) {
+		return nil
+	}
+	res, err := d.Exec(ctx,
+		"UPDATE better_auth_apikey SET referenceId = userId "+
+			"WHERE (referenceId IS NULL OR referenceId = '') AND userId IS NOT NULL AND userId != ''")
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			logx.Infof("store", "已回填 better_auth_apikey.referenceId（%d 行）", n)
+		}
+	}
+	return err
 }
 
 // reportMissing 在接管官方库时，提示源码里用到但库里缺失的列，方便排查。

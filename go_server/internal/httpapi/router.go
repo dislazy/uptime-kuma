@@ -43,6 +43,7 @@ func Mount(mux *http.ServeMux, api *API) {
 	mux.HandleFunc("POST /api/auth/sign-up/email", api.handleSignUpDisabled)
 	mux.HandleFunc("GET /api/auth/get-session", api.handleGetSession)
 	mux.HandleFunc("POST /api/auth/sign-out", api.handleSignOut)
+	mux.HandleFunc("POST /api/auth/change-password", api.handleChangePassword)
 	mux.HandleFunc("GET /api/auth/ok", api.handleOK)
 
 	// 两步验证（better-auth twoFactor 插件）
@@ -83,6 +84,9 @@ func Mount(mux *http.ServeMux, api *API) {
 
 	// 上传文件（状态页图标等）
 	mux.Handle("GET /upload/", http.StripPrefix("/upload/", http.FileServer(http.Dir(api.Cfg.UploadDir))))
+
+	// 需要 API Key 的 REST 接口（/api/info、/api/monitors）
+	MountAPIRoutes(mux, api)
 }
 
 // ---------------- 工具 ----------------

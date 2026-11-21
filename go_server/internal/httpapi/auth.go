@@ -108,13 +108,48 @@ func (a *API) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
 }
 
+// handleChangePassword 对应 POST /api/auth/change-password。
+// 前端 Security 页的“保存密码”按钮走这里；老格式哈希会在改密时顺带升级成 scrypt。
+func (a *API) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, err := a.Auth.UserFromRequest(r.Context(), r)
+	if err != nil || user == nil {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req struct {
+		CurrentPassword string `json:"currentPassword"`
+		NewPassword     string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if err := a.Auth.ChangePassword(r.Context(), user.ID, req.CurrentPassword, req.NewPassword); err != nil {
+		logx.Debugf("http", "修改密码失败: %v", err)
+		switch err {
+		case auth.ErrInvalidCredentials:
+			writeError(w, http.StatusUnauthorized, "Invalid password")
+		case auth.ErrPasswordTooShort:
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "Failed to change password")
+		}
+		return
+	}
+
+	logx.Infof("http", "用户 %s 修改了密码", user.Username)
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
 // handleOK 对应 GET /api/auth/ok（better-auth 的健康检查）
 func (a *API) handleOK(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleAuthFallback 未实现的 better-auth 端点（2FA、API Key 等）统一返回 501，
-// 前端会把它当普通错误处理，不会白屏。
+// handleAuthFallback better-auth 长尾端点统一返回 501，前端会把它当普通
+// 错误处理，不会白屏。主链路（登录/会话/登出/2FA/改密）均已实现。
 func (a *API) handleAuthFallback(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, "/api/auth/")
 	writeError(w, http.StatusNotImplemented, "Endpoint not implemented yet: "+p)

@@ -490,29 +490,36 @@ CREATE TABLE IF NOT EXISTS [better_auth_verification] (
     updatedAt  TIMESTAMP NOT NULL
 );
 
+-- 官方 2026-06-29 迁移（@better-auth/api-key）原样照搬，列名 referenceId/configId 必须一致，
+-- 否则接管官方库 / 官方接管 Go 库都会找不到列。
 CREATE TABLE IF NOT EXISTS [better_auth_apikey] (
-    id           TEXT PRIMARY KEY,
-    name         TEXT,
-    start        TEXT,
-    prefix       TEXT,
-    [key]        TEXT NOT NULL,
-    userId       TEXT NOT NULL REFERENCES [better_auth_user] (id),
-    refillInterval INTEGER,
-    refillAmount INTEGER,
-    lastRefillAt TIMESTAMP,
-    enabled      INTEGER DEFAULT 1,
-    rateLimitEnabled INTEGER DEFAULT 1,
+    id                 TEXT PRIMARY KEY,
+    configId           TEXT NOT NULL DEFAULT 'default',
+    name               TEXT,
+    start              TEXT,
+    prefix             TEXT,
+    [key]              TEXT NOT NULL,
+    -- 注意不能带 NOT NULL：SQLite 的 ALTER TABLE ADD COLUMN 不允许加
+    -- 无默认值的 NOT NULL 列，ensureColumns 给老库补列会失败。
+    -- 插入路径总是写非空值，语义等价官方迁移的 notNullable。
+    referenceId        TEXT REFERENCES [better_auth_user] (id),
+    refillInterval     INTEGER,
+    refillAmount       INTEGER,
+    lastRefillAt       TIMESTAMP,
+    enabled            INTEGER DEFAULT 1,
+    rateLimitEnabled   INTEGER DEFAULT 1,
     rateLimitTimeWindow INTEGER,
-    rateLimitMax INTEGER,
-    requestCount INTEGER DEFAULT 0,
-    remaining    INTEGER,
-    lastRequest  TIMESTAMP,
-    expiresAt    TIMESTAMP,
-    createdAt    TIMESTAMP NOT NULL,
-    updatedAt    TIMESTAMP NOT NULL,
-    permissions  TEXT,
-    metadata     TEXT
+    rateLimitMax       INTEGER,
+    requestCount       INTEGER DEFAULT 0,
+    remaining          INTEGER,
+    lastRequest        TIMESTAMP,
+    expiresAt          TIMESTAMP,
+    createdAt           TIMESTAMP NOT NULL,
+    updatedAt          TIMESTAMP NOT NULL,
+    permissions         TEXT,
+    metadata           TEXT
 );
+CREATE INDEX IF NOT EXISTS better_auth_apikey_key ON [better_auth_apikey] ([key]);
 
 CREATE TABLE IF NOT EXISTS [better_auth_twofactor] (
     id          TEXT PRIMARY KEY,

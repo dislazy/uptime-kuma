@@ -277,6 +277,11 @@ func registerEvents(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.On("initServerTimezone", wrap(initServerTimezone))
 	sock.On("disconnectOtherSocketClients", wrap(disconnectOtherSocketClients))
 
+	// —— API Key 管理（对齐官方 api-key-socket-handler.js）——
+	sock.On("addAPIKey", wrap(addAPIKey))
+	sock.On("getAPIKeyList", wrap(getAPIKeyList))
+	sock.On("deleteAPIKey", wrap(deleteAPIKey))
+
 	// —— 尚未实现的周边功能：返回明确的占位结果，避免前端弹错误提示 ——
 	sock.On("checkDomain", wrap(checkDomain))
 	sock.On("getGameList", wrap(getGameList))

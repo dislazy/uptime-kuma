@@ -66,6 +66,9 @@
 | JSONata 完整表达式 | 完成（`xiatechs/jsonata-go`，纯 Go） |
 | 2FA（TOTP + 备用码 + 锁定） | 完成（含 better-auth 对称加密兼容） |
 | Web Push（VAPID） | 完成（未做浏览器端实测） |
+| API Key 管理（add/get/delete + better_auth_apikey 兼容官方列名） | 完成（2026-11-21，含 legacy 2.x key 双路径校验） |
+| REST API（/api/info、/api/monitors，requireApiKey 鉴权 + 60/min 限流） | 完成（2026-11-21） |
+| 修改密码（POST /api/auth/change-password） | 完成（2026-11-21，Security 页可用） |
 | Docker 主机管理（`docker_host` 表 + 4 个 socket 事件） | 完成 |
 
 ## 二、分批计划
