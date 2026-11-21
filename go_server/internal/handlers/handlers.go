@@ -181,7 +181,7 @@ func afterLogin(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.Emit("statusPageList", buildStatusPageList(ctx, d))
 	sock.Emit("proxyList", buildProxyList(ctx, d))
 	sock.Emit("dockerHostList", buildDockerHostList(ctx, d))
-	sock.Emit("remoteBrowserList", []any{})
+	sock.Emit("remoteBrowserList", buildRemoteBrowserList(ctx, d))
 
 	// 心跳历史：官方在 dashboardRendered 后延迟发送，这里直接发，
 	// 前端同样能处理，且省掉一次往返。
@@ -271,6 +271,11 @@ func registerEvents(sock *socketio.Socket, d *Deps, user *auth.User) {
 	// —— 代理（对齐官方 proxy-socket-handler.js）——
 	sock.On("addProxy", wrap(addProxy))
 	sock.On("deleteProxy", wrap(deleteProxy))
+
+	// —— 远程浏览器（对齐官方 remote-browser-socket-handler.js）——
+	sock.On("addRemoteBrowser", wrap(addRemoteBrowser))
+	sock.On("deleteRemoteBrowser", wrap(deleteRemoteBrowser))
+	sock.On("testRemoteBrowser", wrap(testRemoteBrowser))
 
 	// —— 设置与系统 ——
 	sock.On("getSettings", wrap(getSettings))

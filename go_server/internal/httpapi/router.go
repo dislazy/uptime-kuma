@@ -76,6 +76,10 @@ func Mount(mux *http.ServeMux, api *API) {
 	// 用 {slug} 通配注册会互相冲突（/api/status-page/heartbeat/incident-history 两边都匹配）。
 	mux.HandleFunc("GET /api/status-page/", api.handleStatusPageRoute)
 
+	// 状态页整体徽章（公开访问，官方 status-page-router.js:171）。
+	// 比 /api/status-page/ 子树更具体，ServeMux 优先匹配本条。
+	mux.HandleFunc("GET /api/status-page/{slug}/badge", api.handleStatusPageBadge)
+
 	// 徽章
 	mux.HandleFunc("GET /api/badge/{id}/{metric}", api.handleBadge)
 	mux.HandleFunc("GET /api/badge/{id}/{metric}/{duration}", api.handleBadge)

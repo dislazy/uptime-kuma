@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,16 @@ func (RealBrowserChecker) Check(ctx context.Context, m *model.Monitor) Result {
 	// 与官方一致：只允许 http/https，防止 file:// 读到容器内文件
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return Down("Invalid url protocol, only http and https are allowed.")
+	}
+
+	// 远程浏览器分支（官方 monitor.remote_browser → getRemoteBrowser → chromium.connect）。
+	// 官方 getRemoteBrowser 查不到会抛 "Remote browser not found" → 判 DOWN。
+	if id := m.GetInt("remote_browser"); id > 0 {
+		endpoint := RemoteBrowserURL(m)
+		if endpoint == "" {
+			return Down("Remote browser not found")
+		}
+		return checkRemote(ctx, m, target, endpoint)
 	}
 
 	binary, err := findChrome(ctx)
@@ -91,6 +102,32 @@ func (RealBrowserChecker) Check(ctx context.Context, m *model.Monitor) Result {
 	return Up("OK", ping)
 }
 
+// checkRemote 走远程 Playwright 浏览器加载页面。
+//
+// 官方 real-browser-monitor-type.js:264 语义：
+//   - 200-399 → UP，msg 为状态码数字，ping 为响应耗时
+//   - 其它状态码 → DOWN，msg 为状态码
+//   - 连接/加载失败 → DOWN，透出错误
+func checkRemote(ctx context.Context, m *model.Monitor, target, endpoint string) Result {
+	timeout := time.Duration(float64(m.Interval)*0.8) * time.Second
+	if timeout <= 0 || timeout > 60*time.Second {
+		timeout = 30 * time.Second
+	}
+
+	start := time.Now()
+	status, finalURL, err := CheckRemoteBrowserPage(ctx, endpoint, target, timeout)
+	ping := time.Since(start).Milliseconds()
+
+	if err != nil {
+		return Down("%s", err.Error())
+	}
+	if status < 200 || status >= 400 {
+		return Down("%d", status)
+	}
+	_ = finalURL // 官方 msg 只带状态码；finalURL 备用
+	return Up(strconv.Itoa(status), ping)
+}
+
 // findChrome 依次尝试设置项、环境变量与 PATH。
 func findChrome(ctx context.Context) (string, error) {
 	if p := strings.TrimSpace(Setting(ctx, "chromeExecutable", "")); p != "" {
@@ -104,7 +141,12 @@ func findChrome(ctx context.Context) (string, error) {
 			return p, nil
 		}
 	}
-	for _, name := range []string{"google-chrome", "chromium", "chromium-browser", "chrome"} {
+	// 官方 allowedList：Linux 常见包名 / macOS 应用束路径
+	for _, name := range []string{
+		"google-chrome", "chromium", "chromium-browser", "chrome",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+	} {
 		if p, err := exec.LookPath(name); err == nil {
 			return p, nil
 		}

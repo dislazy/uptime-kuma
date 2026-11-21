@@ -415,6 +415,9 @@ func (mgr *Manager) execute(ctx context.Context, st *state) {
 	// 每次从库取最新配置，代理内容的修改无需重启/重载即可生效。
 	mgr.attachProxy(ctx, mon)
 
+	// 远程浏览器解析（官方 getRemoteBrowser：每次探测现查 remote_browser 表）。
+	mgr.attachRemoteBrowser(ctx, mon)
+
 	timeout := checkers.Timeout(mon)
 	checkCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -477,6 +480,28 @@ func (mgr *Manager) attachProxy(ctx context.Context, mon *model.Monitor) {
 		Password: p.Password,
 		Active:   p.Active,
 	})
+}
+
+// attachRemoteBrowser 为 real-browser 监控解析 remote_browser 对应的 WS 端点。
+//
+// 官方语义：只有 real-browser 类型消费 remote_browser，每次探测现查表
+// （getRemoteBrowser）。查不到时不注入，由 checker 报
+// "Remote browser not found" 判 DOWN（官方同款抛错语义）。
+func (mgr *Manager) attachRemoteBrowser(ctx context.Context, mon *model.Monitor) {
+	checkers.ClearRemoteBrowser(mon)
+	if mon.Type != "real-browser" {
+		return
+	}
+	id := mon.GetInt("remote_browser")
+	if id <= 0 {
+		return
+	}
+	url, err := mgr.mon.RemoteBrowserURLByID(ctx, id)
+	if err != nil {
+		logx.Debugf("monitor", "监控 %d 的远程浏览器 %d 不可用: %v", mon.ID, id, err)
+		return
+	}
+	checkers.SetRemoteBrowser(mon, url)
 }
 
 // record 落库 + 广播 + 通知。

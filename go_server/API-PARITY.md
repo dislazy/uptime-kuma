@@ -8,9 +8,9 @@
 
 | 类别 | 官方总数 | Go 直接对齐 | 等价覆盖 | 缺失 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| REST 路由（生产挂载） | 40 | 33 | — | 7 | `/metrics` 鉴权已对齐官方（2026-11-21 修复），见 §1.1 |
+| REST 路由（生产挂载） | 40 | 34 | — | 6 | `/metrics` 鉴权、`/api/status-page/:slug/badge` 已对齐官方（2026-11-21 修复），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
-| Socket 事件（客户端→服务端） | 76 | 68 | — | 8 | proxy 2 事件 2026-11-21 已补齐；缺失集中在 remote-browser / cloudflared，见 §3 |
+| Socket 事件（客户端→服务端） | 76 | 71 | — | 5 | proxy/remote-browser 已补齐（2026-11-21）；缺失只剩 cloudflared×5（明确不做），见 §3 |
 | Socket 推送（服务端→客户端） | 23 | 16 | 3 | 4 | 前端 UI 实际受影响的只剩 domainInfo（域名 whois），见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
@@ -57,17 +57,21 @@
 | `GET /metrics` | server.js:329 | `httpapi.handleMetrics` | ✅ 官方鉴权全链路（prometheusApiEnabled 门控 404 → disableAuth → apiKeysEnabled 时 Basic 密码字段=API key，否则用户名密码；E2E 验证 404/401/200/分支切换） |
 | `GET /upload/*`（静态） | server.js:354 | FileServer | ✓ |
 
-### 1.2 缺失（7 条）
+### 1.2 缺失（6 条）
 
 | 官方路由 | 官方位置 | 影响 | 补齐成本 |
 | --- | --- | --- | --- |
 | `GET /robots.txt` | server.js:317 | 搜索引擎抓取控制（跟随 `searchEngineIndex` 设置） | 极小 |
 | `GET /.well-known/change-password` | server.js:356 | 浏览器密码管理器跳转官方 wiki | 极小 |
-| `GET /api/status-page/:slug/badge` | status-page-router.js:171 | 状态页整体状态徽章（外部引用场景） | 小 |
 | `GET /api/openapi.json` | api-router.js:347 | OpenAPI 描述文件 | 中 |
 | `GET /api/docs` | api-router.js:351 | API 文档页，**前端 Settings→General 有链接**（General.vue:233），当前点击 404 | 中（依赖上一条） |
 | `ALL /mcp` | mcp-router.ts:74 | 上游新增的 MCP（AI 工具接入）端点，requireApiKey | 大（独立协议栈） |
-| `GET /screenshots/*`（静态） | uptime-kuma-server.ts:230 | real-browser 截图外链 | n/a：Go 的 real-browser 走本地 Chromium，无截图产物 |
+| `GET /screenshots/*`（静态） | uptime-kuma-server.ts:230 | real-browser 截图外链 | n/a：Go 的 real-browser 走本地 Chromium / 远程 Playwright，均不落截图产物（已知等价偏差） |
+
+> `GET /api/status-page/:slug/badge` ✅ 2026-11-21 已补齐（`httpapi/badge.go handleStatusPageBadge`：
+> 聚合 public 分组最新心跳，Maintenance > Degraded > Up > Down 官方同序，PENDING 忽略，
+> 无心跳/无此 slug 渲染无 label 的灰色 N/A 单段徽章；upColor/downColor/partialColor/
+> maintenanceColor/label 参数全支持）。
 
 ### 1.3 不适用（官方仅在 dev/e2e 模式挂载）
 
@@ -136,7 +140,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | general（6） | `initServerTimezone` / `getGameList` / `getPM2ProcessList` / `testChrome` / `getPushExample` / `disconnectOtherSocketClients` | ✅ 全注册；其中 getGameList / PM2 / testChrome 为占位返回 |
 | maintenance（11） | add/edit/delete/pause/resume + getMonitorMaintenance 等全套 | ✅ 全部 |
 | proxy（2） | `addProxy` / `deleteProxy` | ✅ 2026-11-21 补齐（对齐 proxy-socket-handler.js：Saved./successDeleted 回包、default 置换、applyExisting 批量指派 + 广播 monitorList、删除级联置空 monitor.proxy_id）；HTTP 家族 checker 按 `proxy_id` 走代理（http/https CONNECT 隧道、socks5/socks5h/socks 走 SOCKS5、socks4 自实现，官方每次探测 R.load 的语义 → Go 每次 attachProxy 现查） |
-| remote-browser（3） | `addRemoteBrowser` / `deleteRemoteBrowser` / `testRemoteBrowser` | ❌ 全缺（Remote Browsers 设置页不可用；Go 的 real-browser 监控走本地 Chromium，不走远程浏览器） |
+| remote-browser（3） | `addRemoteBrowser` / `deleteRemoteBrowser` / `testRemoteBrowser` | ✅ 2026-11-21 补齐（对齐 remote-browser-socket-handler.js：Saved./successDeleted 回包、删除级联置空 monitor.remote_browser、testRemoteBrowser 走真实 Playwright 握手）；real-browser 监控按 `remote_browser` 连远程端点——Go 自带 Playwright 浏览器服务器协议极小客户端（initialize/newContext/newPage/goto，gorilla/websocket 实现，协议形状按官方 1.5x 客户端实测报文校准），探测语义与官方 real-browser-monitor-type.js:264 一致（200-399 → UP、msg=状态码；其余 → DOWN） |
 | status-page（10） | incident 增删改 + saveStatusPage 等 | ✅ 全部 |
 
 ### 3.3 Go 多出的事件（官方没有）
@@ -163,7 +167,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `certInfo` | ✅ | 2026-11-21 补齐：https 握手后采集证书链（对齐 readTlsInfo/parseCertificateInfo 形状，含嵌套 issuerCertificate 与 certType），落库 monitor_tls_info 并推送。E2E 与 openssl 逐秒一致 |
 | `domainInfo` | ❌ | 域名到期信息未采集（依赖 checkDomain 的 RDAP，Go 未接） |
 | `proxyList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，proxy CRUD 已补齐，见 §3.2） |
-| `remoteBrowserList` | ✅ | 同上，空列表 |
+| `remoteBrowserList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，remote-browser CRUD 已补齐，见 §3.2） |
 | `dockerHostList` / `maintenanceList` / `notificationList` / `statusPageList` / `monitorTypeList` / `stats` | ✅ | |
 | `refresh` | ❌ | 官方踢其它会话前先发 refresh（uptime-kuma-server.ts:594），Go 直接断开；被踢端少一次"强制刷新"体验 |
 | `initServerTimezone`（推送） | ❌ | 官方登录后若 `initServerTimezone` 设置未置位则推送该事件触发前端时区初始化弹窗（server.js:1562）；Go 实现了回包 handler 但从不主动推送，弹窗永不出现 |
@@ -187,10 +191,10 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | --- | --- | --- |
 | B1 | ~~TLS 证书信息采集 + `certInfo` 推送 + `cert-exp` 徽章~~ | ✅ 2026-11-21 已补齐（含证书到期通知：tlsExpiryNotifyDays [7,14,21]、expiry_notification 开关、sent_history 去重、换证书清历史，官方 util.ts:843 全语义） |
 | B2 | ~~Proxy 管理（socket 事件 + checker 消费 `proxy_id`）~~ | ✅ 2026-11-21 已补齐：`addProxy`/`deleteProxy` + 真实 `proxyList`；HTTP 家族探测按 `proxy_id` 走 http/https/socks5/socks5h/socks/socks4 六协议（socks-proxy-agent 的 lookup 语义：socks5 本地解析、socks5h/socks 远程解析、socks4 仅 IPv4）；官方 `active \|\| true` 恒真语义保持一致（前端"启用"开关官方本就不生效）。E2E 验证：建代理→监控心跳走代理（代理计数增长）→删代理→心跳回退直连→applyExisting 批量指派 |
-| B3 | Remote Browser 管理（3 事件） | Remote Browsers 设置页不可用（real-browser 本地 Chromium 仍可用） |
-| B4 | Cloudflared Tunnel（5 事件） | Cloudflared 设置页不可用 |
+| B3 | ~~Remote Browser 管理（3 事件）~~ | ✅ 2026-11-21 已补齐：`addRemoteBrowser`/`deleteRemoteBrowser`/`testRemoteBrowser` + 真实 `remoteBrowserList`；real-browser 监控可连远程 Playwright 端点（browserless / launchServer），Go 自实现协议极小客户端，E2E 走真 Chromium 验证 msg=200 |
+| B4 | Cloudflared Tunnel（5 事件） | **明确不做**（2026-11-21 决策）：部署机有公网直连，隧道无使用场景；官方实现还要管理 cloudflared 二进制进程，收益/成本比最低。Cloudflared 设置页在 Go 后端下不可用 |
 | B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |
-| B6 | `/api/status-page/:slug/badge` | 状态页整体徽章不可用 |
+| B6 | ~~`/api/status-page/:slug/badge`~~ | ✅ 2026-11-21 已补齐：整体徽章四态（Up/Degraded/Maintenance/N-A）官方同序判定，E2E 验证混合→黄 Degraded、全 UP→绿、坏 slug→灰 N/A |
 | B7 | `domainInfo` + checkDomain（RDAP） | 域名到期信息缺失（TLS 证书到期已由 B1 覆盖，此项是域名 whois，另一条线） |
 | B8 | `/robots.txt`、`/.well-known/change-password` | 低影响 |
 | B9 | `refresh` / `initServerTimezone` 推送 | 体验细节（被踢端不自动刷新；时区初始化弹窗不出现） |

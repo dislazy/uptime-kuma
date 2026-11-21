@@ -181,6 +181,66 @@ func (a *API) lastStatus(r *http.Request, monitorID int64) int {
 	return beats[len(beats)-1].Status
 }
 
+// handleStatusPageBadge 生成状态页整体徽章。
+//
+// 官方 status-page-router.js:171：聚合该状态页所有 public 分组里监控的最新心跳：
+//   - 任一维护 → Maintenance（优先级最高，官方同序）
+//   - 全 UP → Up；UP+DOWN 混合 → Degraded；全 DOWN → Down
+//   - PENDING 不参与聚合；一个可用心跳都没有 → N/A（单段灰色徽章）
+func (a *API) handleStatusPageBadge(w http.ResponseWriter, r *http.Request) {
+	slug := strings.ToLower(r.PathValue("slug"))
+	q := r.URL.Query()
+
+	var (
+		hasUp, hasDown, hasMaintenance bool
+	)
+	if a.StatusPage != nil {
+		if sp, err := a.StatusPage.GetBySlug(r.Context(), slug); err == nil && sp != nil {
+			ids, err := a.StatusPage.MonitorIDsForPage(r.Context(), sp.ID)
+			if err == nil {
+				for _, id := range ids {
+					switch a.lastStatus(r, id) {
+					case model.StatusMaintenance:
+						hasMaintenance = true
+					case model.StatusPending:
+						// 官方明确忽略 PENDING
+					case model.StatusUp:
+						hasUp = true
+					default:
+						hasDown = true
+					}
+				}
+			}
+		}
+	}
+
+	label := strings.TrimSpace(q.Get("label"))
+	var value, color string
+	switch {
+	case !hasUp && !hasDown && !hasMaintenance:
+		// 无可用心跳（含 slug 不存在）：官方渲染无 label 的灰色 N/A 徽章
+		value, color = "N/A", naColor
+	case hasMaintenance:
+		value = "Maintenance"
+		color = orDefault(q.Get("maintenanceColor"), "#808080")
+	case hasUp && !hasDown:
+		value = "Up"
+		color = orDefault(q.Get("upColor"), defaultUpColor)
+	case hasUp:
+		value = "Degraded"
+		color = orDefault(q.Get("partialColor"), "#F6BE00")
+	default:
+		value = "Down"
+		color = orDefault(q.Get("downColor"), defaultDownColor)
+	}
+
+	svg := renderBadge(label, value, color)
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(svg))
+}
+
 // windowFor 按 duration 选择聚合表并返回统计窗口。
 func (a *API) windowFor(r *http.Request, monitorID int64, duration string) (out struct {
 	Up, Down, Count int64
@@ -255,6 +315,9 @@ func pingColor(ms float64) string {
 
 // renderBadge 生成 shields 风格的徽章 SVG。
 //
+// label 为空时渲染单段徽章（官方 makeBadge 对空 label 的行为：
+// 状态页徽章不传 label 时就是这种只有右侧色块的形态）。
+//
 // 宽度按字符数估算：shields 用 Verdana 11px，平均每个字符约 6.5px。
 func renderBadge(label, value, color string) string {
 	const (
@@ -264,8 +327,39 @@ func renderBadge(label, value, color string) string {
 		labelPad = 2 * padding
 	)
 
-	labelW := int(float64(len(label))*charW) + labelPad
 	valueW := int(float64(len(value))*charW) + labelPad
+
+	if label == "" {
+		valueMid := valueW * 10 / 2
+		return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" role="img" aria-label="%s">
+  <title>%s</title>
+  <linearGradient id="s" x2="0" y2="100%%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="%d" height="%d" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="%d" height="%d" fill="%s"/>
+    <rect width="%d" height="%d" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="%d" y="14" fill="#010101" fill-opacity=".3">%s</text>
+    <text x="%d" y="13">%s</text>
+  </g>
+</svg>`,
+			valueW, height, value,
+			value,
+			valueW, height,
+			valueW, height, color,
+			valueW, height,
+			valueMid, value,
+			valueMid, value,
+		)
+	}
+
+	labelW := int(float64(len(label))*charW) + labelPad
 	totalW := labelW + valueW
 
 	labelMid := labelW * 10 / 2
