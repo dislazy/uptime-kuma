@@ -66,6 +66,18 @@ docker run -d --name uptime-kuma-go \
   uptime-kuma-go:dev
 ```
 
+要连 MariaDB（或者直接用现成镜像）就用示例编排，数据库是**独立容器**：
+
+```bash
+cd go_server
+cp .env.example .env      # 改掉里面两个 CHANGE_ME 密码
+docker compose -f docker-compose.example.yml up -d
+```
+
+`docker-compose.example.yml` 里带有 `healthcheck` + `depends_on: service_healthy`，
+应用会等数据库真正可连接后才启动；应用账号只有 `kuma` 库的权限（实测这种授权
+足以通过启动时的 `CREATE DATABASE IF NOT EXISTS`，因为库已由镜像初始化好）。
+
 ---
 
 ## 配置
@@ -131,7 +143,27 @@ environment:
   非纯数字时记 0（`handlers.numericUserID`）；直接写字符串在 MySQL 严格模式下报 1265
 - `getDatabaseSize` / `shrinkDatabase` 与官方一致：MySQL 下返回 0、收缩是空操作
   （官方 `Database.shrink()` 只对 SQLite 执行 `VACUUM`）
-- 未实现 `embedded-mariadb`（官方镜像内置 `mariadbd` 的那套），只支持外部库
+- 账号只需该库的权限即可启动：`CREATE DATABASE IF NOT EXISTS` 对**已存在**的库
+  不校验全局 `CREATE`（实测确认），所以 compose 里镜像预建库 + db 级授权就够了
+
+外部库的完整编排见 [`docker-compose.example.yml`](docker-compose.example.yml)
+（应用 + `mariadb:11.4` 两个容器，含健康检查、字符集、超时窗口）。
+
+要留在默认 SQLite，把 `UPTIME_KUMA_DB_*` 全部删掉即可，compose 里只剩一个服务：
+
+```yaml
+services:
+  uptime-kuma:
+    image: ghcr.io/dislazy/uptime-kuma-go:latest
+    restart: unless-stopped
+    ports: ["3001:3001"]
+    volumes: ["./data:/app/data"]   # kuma.db 就在这里面
+```
+
+**关于 `embedded-mariadb`**：不做，也不打算做。官方镜像把 `mariadbd` 打进同一个
+容器、在 `/app/data/mariadb` 起实例，代价是镜像 +400MB，并且数据库的备份、升级、
+资源限制、故障排查全和应用绑死（数据库崩溃会带着应用一起重建）。需要"开箱即用"
+就在 compose 里加一个 `db` 服务，见上面的示例文件；不需要就继续用 SQLite。
 
 真库验证方式见 [`e2e/README.md`](e2e/README.md)：`TestMariaDBIntegration`（进程内直连，
 未设环境变量自动 skip）+ `e2e/mysql_smoke.js`（真实服务 + socket.io 全链路）。
@@ -243,7 +275,7 @@ environment:
 | JSONata 沙箱 | 官方用 `node:vm` 跑 jsonata.js；这里用纯 Go 的 `jsonata-go`，个别边缘语法可能不一致 |
 | real-browser | 需要 `-tags realbrowser` 且机器上有 Chromium；默认构建返回"需重建"提示 |
 | Web Push | 代码完成、VAPID 密钥自动生成并落库，但**未做浏览器端实测** |
-| embedded-mariadb | 不实现。官方镜像内置 `mariadbd` 并在 `/app/data/mariadb` 起实例；这里只支持外部 MySQL/MariaDB |
+| embedded-mariadb | 明确不做（不把 `mariadbd` 塞进应用镜像）。要"一个文件起全栈"就用 [`docker-compose.example.yml`](docker-compose.example.yml) 里的独立 `db` 服务 |
 | `/metrics` | 指标集未对齐官方 7 个标准指标（见 API-PARITY 的 B12） |
 
 ## 代码结构

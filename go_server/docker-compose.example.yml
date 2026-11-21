@@ -1,0 +1,83 @@
+# Uptime Kuma Go 后端 + 独立 MariaDB 的示例编排。
+#
+# 用法（在本文件所在目录执行）：
+#   1. 建一个 .env，写上两个密码（不要提交到仓库）：
+#        KUMA_DB_PASSWORD=<应用账号密码>
+#        KUMA_DB_ROOT_PASSWORD=<root 密码>
+#   2. docker compose -f docker-compose.example.yml up -d
+#   3. 浏览器打开 http://<主机>:3001 走初始化
+#
+# 为什么数据库是独立容器、而不是像官方镜像那样内置 mariadbd：
+#   go_server 运行镜像里只有一个静态二进制 + 前端 dist（约 20MB）。把数据库塞进
+#   同一个容器会让镜像多 400MB 以上，而且备份、升级、资源限制、故障排查全被绑死
+#   在一起（数据库挂了整个容器重建，升级数据库版本要重建应用镜像）。独立容器后
+#   这三件事各自独立，也可以把 db 直接换成托管 MySQL/RDS。
+#
+# 本文件里所有相对路径（./data、./mariadb）都相对于本文件所在目录。
+# 复制到别处部署时按需调整，或把本文件挪到你的部署目录再改路径。
+name: uptime-kuma-go
+
+services:
+  uptime-kuma:
+    image: ghcr.io/dislazy/uptime-kuma-go:latest
+    # 想从源码构建就改用下面这段（build context 必须是仓库根目录，否则拿不到前端源码）：
+    # build:
+    #   context: ..
+    #   dockerfile: go_server/Dockerfile
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      # 上传的图标、real-browser 截图，以及切回 SQLite 模式时的 kuma.db
+      - ./data:/app/data
+    environment:
+      UPTIME_KUMA_DB_TYPE: mariadb
+      UPTIME_KUMA_DB_HOSTNAME: db
+      UPTIME_KUMA_DB_PORT: "3306"
+      UPTIME_KUMA_DB_NAME: kuma
+      UPTIME_KUMA_DB_USERNAME: kuma
+      UPTIME_KUMA_DB_PASSWORD: "${KUMA_DB_PASSWORD:?请先在 .env 里设置 KUMA_DB_PASSWORD}"
+      UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS: "10"
+      # 放在 Nginx / Caddy / Traefik 后面、需要拿到真实客户端 IP 时再打开：
+      # UPTIME_KUMA_TRUST_PROXY: "1"
+      # 需要 TLS 时挂证书进去再指路径（容器内路径）：
+      # UPTIME_KUMA_SSL_CERT: /app/certs/fullchain.pem
+      # UPTIME_KUMA_SSL_KEY: /app/certs/privkey.pem
+    depends_on:
+      db:
+        # 等数据库真正可连接再启动，否则首次部署应用会连不上直接退出重启
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    container_name: uptime-kuma-db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 关掉 TIMESTAMP 的历史隐式行为：旧版 MariaDB 在
+      # explicit_defaults_for_timestamp=OFF 下会给同表第二个 TIMESTAMP NOT NULL
+      # 隐式补 '0000-00-00 00:00:00'，严格模式建表直接 1067。
+      # go_server 已经把时间列全建成 DATETIME(3)，这条是给以后可能新增的列兜底。
+      - --explicit_defaults_for_timestamp=1
+    environment:
+      # 这三个变量会让镜像在初始化时建库 + 建同名用户 + 只授予该库权限。
+      # 应用启动时的 CREATE DATABASE IF NOT EXISTS 对已存在的库不需要额外权限，
+      # 所以不要给应用账号全局 CREATE（实测：仅 db 级授权也能正常启动）。
+      MARIADB_DATABASE: kuma
+      MARIADB_USER: kuma
+      MARIADB_PASSWORD: "${KUMA_DB_PASSWORD:?请先在 .env 里设置 KUMA_DB_PASSWORD}"
+      MARIADB_ROOT_PASSWORD: "${KUMA_DB_ROOT_PASSWORD:?请先在 .env 里设置 KUMA_DB_ROOT_PASSWORD}"
+    volumes:
+      - ./mariadb:/var/lib/mysql
+    # 默认不把 3306 暴露到宿主机。要用客户端连进来排查时再打开，并只绑回环：
+    # ports:
+    #   - "127.0.0.1:3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # 首次初始化数据目录要几十秒，给足窗口
+      start_period: 30s

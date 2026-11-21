@@ -17,3 +17,6 @@ web/dist/
 .idea/
 .vscode/
 .DS_Store
+
+# docker-compose.example.yml 的 db 数据目录（不要提交）
+mariadb/

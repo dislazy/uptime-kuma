@@ -323,7 +323,7 @@ grep -n "直接对齐 40 条\|REST 路由（生产挂载）\|Socket 事件（客
 | `/screenshots/*` 静态外链 | 不实现 | real-browser 不落截图产物，等价偏差 |
 | `importantHeartbeatList` 推送 | 暂不实现 | 前端不消费 |
 | `/metrics` 完整指标集（B12） | **暂不做**（2026-11-21 决定） | 需要 7 个标准指标 + 动态 tag label；当前只有 3 个 `gokuma_*` gauge，官方 Grafana 面板接不上 |
-| `embedded-mariadb` 存储 | **不做** | 要把 `mariadbd` 打进镜像（约 +430MB）并实现 datadir 初始化、socket 启动；外部 MariaDB 已覆盖生产用法 |
+| `embedded-mariadb` 存储 | **不做**（2026-11-21 明确） | 把 `mariadbd` 打进应用镜像会让镜像 +430MB，且数据库的备份/升级/资源限制/故障排查全和应用绑死。要"一条命令起全栈"就给 `go_server/docker-compose.example.yml` 里加独立 `db` 服务（已提供），不给镜像加数据库 |
 | MySQL/MariaDB 真库联调 | **已完成**（2026-11-21，外部 MariaDB） | `TestMariaDBIntegration` + `e2e/mysql_smoke.js` 跑通建库/接管/读写/聚合/CRUD；抓出并修掉 5 个 SQLite 才宽容的问题（见 §3.3 第 4 条）。开发机仍不装数据库，复测依赖外部库 + 环境变量 |
 | C 级"等价实现"5 项 | 不动 | 行为一致，机制不同，改了没有收益 |
 
