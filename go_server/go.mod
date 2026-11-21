@@ -17,6 +17,7 @@ require (
 	github.com/xiatechs/jsonata-go v1.8.8
 	go.mongodb.org/mongo-driver v1.17.10
 	golang.org/x/crypto v0.57.0
+	golang.org/x/net v0.60.0
 	golang.org/x/text v0.42.0
 	google.golang.org/grpc v1.85.0
 	modernc.org/sqlite v1.34.4
@@ -74,7 +75,6 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect

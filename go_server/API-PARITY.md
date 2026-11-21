@@ -1,6 +1,6 @@
 # API 对齐审计（Node 官方后端 vs Go 后端）
 
-> 基线：官方 `upstream/master` = `b0cd0f1d`（2026-11-21 同步），Go 侧 `main` = `2b168fe6`。
+> 基线：官方 `upstream/master` = `b0cd0f1d`（2026-11-21 同步）；Go 侧 `main` 持续演进，各缺口完成状态以行内标注为准。
 > 本文逐条核对两侧全部对外 API：REST 路由、better-auth 端点、Socket.IO 双向事件。
 > 核对方法见文末附录，可用相同命令复现。
 
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- | --- |
 | REST 路由（生产挂载） | 40 | 33 | — | 7 | `/metrics` 鉴权已对齐官方（2026-11-21 修复），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
-| Socket 事件（客户端→服务端） | 76 | 66 | — | 10 | 缺失集中在 proxy / remote-browser / cloudflared，见 §3 |
+| Socket 事件（客户端→服务端） | 76 | 68 | — | 8 | proxy 2 事件 2026-11-21 已补齐；缺失集中在 remote-browser / cloudflared，见 §3 |
 | Socket 推送（服务端→客户端） | 23 | 16 | 3 | 4 | 前端 UI 实际受影响的只剩 domainInfo（域名 whois），见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
@@ -135,7 +135,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | docker（3） | `addDockerHost` / `deleteDockerHost` / `testDockerHost` | ✅ |
 | general（6） | `initServerTimezone` / `getGameList` / `getPM2ProcessList` / `testChrome` / `getPushExample` / `disconnectOtherSocketClients` | ✅ 全注册；其中 getGameList / PM2 / testChrome 为占位返回 |
 | maintenance（11） | add/edit/delete/pause/resume + getMonitorMaintenance 等全套 | ✅ 全部 |
-| proxy（2） | `addProxy` / `deleteProxy` | ❌ 全缺（**Proxies 设置页不可用**；且 Go 的 HTTP checker 不消费 `proxy_id`——即使接管官方库，带代理的监控也直连目标） |
+| proxy（2） | `addProxy` / `deleteProxy` | ✅ 2026-11-21 补齐（对齐 proxy-socket-handler.js：Saved./successDeleted 回包、default 置换、applyExisting 批量指派 + 广播 monitorList、删除级联置空 monitor.proxy_id）；HTTP 家族 checker 按 `proxy_id` 走代理（http/https CONNECT 隧道、socks5/socks5h/socks 走 SOCKS5、socks4 自实现，官方每次探测 R.load 的语义 → Go 每次 attachProxy 现查） |
 | remote-browser（3） | `addRemoteBrowser` / `deleteRemoteBrowser` / `testRemoteBrowser` | ❌ 全缺（Remote Browsers 设置页不可用；Go 的 real-browser 监控走本地 Chromium，不走远程浏览器） |
 | status-page（10） | incident 增删改 + saveStatusPage 等 | ✅ 全部 |
 
@@ -162,7 +162,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `importantHeartbeatList` | ❌ | 官方会推但**前端不监听**（socket.js 无注册），仅移动端/API 消费；无 UI 影响 |
 | `certInfo` | ✅ | 2026-11-21 补齐：https 握手后采集证书链（对齐 readTlsInfo/parseCertificateInfo 形状，含嵌套 issuerCertificate 与 certType），落库 monitor_tls_info 并推送。E2E 与 openssl 逐秒一致 |
 | `domainInfo` | ❌ | 域名到期信息未采集（依赖 checkDomain 的 RDAP，Go 未接） |
-| `proxyList` | ✅ | 登录推送空列表（因 proxy CRUD 未实现，见 §3.2） |
+| `proxyList` | ✅ | 登录推送 + 增删后推送真表（2026-11-21 起，proxy CRUD 已补齐，见 §3.2） |
 | `remoteBrowserList` | ✅ | 同上，空列表 |
 | `dockerHostList` / `maintenanceList` / `notificationList` / `statusPageList` / `monitorTypeList` / `stats` | ✅ | |
 | `refresh` | ❌ | 官方踢其它会话前先发 refresh（uptime-kuma-server.ts:594），Go 直接断开；被踢端少一次"强制刷新"体验 |
@@ -186,7 +186,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | # | 功能 | 影响面 |
 | --- | --- | --- |
 | B1 | ~~TLS 证书信息采集 + `certInfo` 推送 + `cert-exp` 徽章~~ | ✅ 2026-11-21 已补齐（含证书到期通知：tlsExpiryNotifyDays [7,14,21]、expiry_notification 开关、sent_history 去重、换证书清历史，官方 util.ts:843 全语义） |
-| B2 | Proxy 管理（socket 事件 + checker 消费 `proxy_id`） | Proxies 设置页不可用；接管官方库后带代理监控直连 |
+| B2 | ~~Proxy 管理（socket 事件 + checker 消费 `proxy_id`）~~ | ✅ 2026-11-21 已补齐：`addProxy`/`deleteProxy` + 真实 `proxyList`；HTTP 家族探测按 `proxy_id` 走 http/https/socks5/socks5h/socks/socks4 六协议（socks-proxy-agent 的 lookup 语义：socks5 本地解析、socks5h/socks 远程解析、socks4 仅 IPv4）；官方 `active \|\| true` 恒真语义保持一致（前端"启用"开关官方本就不生效）。E2E 验证：建代理→监控心跳走代理（代理计数增长）→删代理→心跳回退直连→applyExisting 批量指派 |
 | B3 | Remote Browser 管理（3 事件） | Remote Browsers 设置页不可用（real-browser 本地 Chromium 仍可用） |
 | B4 | Cloudflared Tunnel（5 事件） | Cloudflared 设置页不可用 |
 | B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |

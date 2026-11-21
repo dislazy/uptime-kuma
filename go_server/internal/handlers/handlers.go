@@ -179,7 +179,7 @@ func afterLogin(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.Emit("maintenanceList", d.MaintMgr.JSONList())
 	sock.Emit("monitorTypeList", monitorTypeList())
 	sock.Emit("statusPageList", buildStatusPageList(ctx, d))
-	sock.Emit("proxyList", []any{})
+	sock.Emit("proxyList", buildProxyList(ctx, d))
 	sock.Emit("dockerHostList", buildDockerHostList(ctx, d))
 	sock.Emit("remoteBrowserList", []any{})
 
@@ -267,6 +267,10 @@ func registerEvents(sock *socketio.Socket, d *Deps, user *auth.User) {
 	sock.On("addDockerHost", wrap(addDockerHost))
 	sock.On("deleteDockerHost", wrap(deleteDockerHost))
 	sock.On("testDockerHost", wrap(testDockerHost))
+
+	// —— 代理（对齐官方 proxy-socket-handler.js）——
+	sock.On("addProxy", wrap(addProxy))
+	sock.On("deleteProxy", wrap(deleteProxy))
 
 	// —— 设置与系统 ——
 	sock.On("getSettings", wrap(getSettings))

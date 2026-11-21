@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -52,6 +53,11 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 
 	client, err := buildClient(m)
 	if err != nil {
+		// 代理协议错误按官方 createAgents 的文案原样透出
+		var pe *ProxyConfigError
+		if errors.As(err, &pe) {
+			return Down("%s", pe.msg)
+		}
 		return Down("Invalid TLS config: %s", err)
 	}
 
@@ -185,15 +191,24 @@ func buildClient(m *model.Monitor) (*http.Client, error) {
 		maxRedirects = 10
 	}
 
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		TLSClientConfig:       tlsCfg,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 0,
+		MaxIdleConns:          32,
+		IdleConnTimeout:       30 * time.Second,
+	}
+
+	// 代理（官方 monitor.js:654：proxy_id 存在且代理启用时走代理）
+	if info, ok := ProxyFrom(m); ok && info.Active {
+		if err := ApplyProxy(transport, info); err != nil {
+			return nil, err
+		}
+	}
+
 	return &http.Client{
-		Transport: &http.Transport{
-			DialContext:           dialer.DialContext,
-			TLSClientConfig:       tlsCfg,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 0,
-			MaxIdleConns:          32,
-			IdleConnTimeout:       30 * time.Second,
-		},
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if maxRedirects == 0 {
 				return http.ErrUseLastResponse

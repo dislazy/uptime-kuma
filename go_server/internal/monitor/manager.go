@@ -411,6 +411,10 @@ func (mgr *Manager) execute(ctx context.Context, st *state) {
 		return
 	}
 
+	// 代理解析（官方 monitor.js:654：HTTP 家族每次探测前 R.load proxy）。
+	// 每次从库取最新配置，代理内容的修改无需重启/重载即可生效。
+	mgr.attachProxy(ctx, mon)
+
 	timeout := checkers.Timeout(mon)
 	checkCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -439,6 +443,40 @@ func (mgr *Manager) scheduleRetry(st *state, mon *model.Monitor) {
 		wait = mon.Interval
 	}
 	st.nextAt = time.Now().Add(time.Duration(wait) * time.Second)
+}
+
+// attachProxy 为 HTTP 家族监控解析 proxy_id 对应的代理配置。
+//
+// 官方语义：只有 http / keyword / json-query 走代理（monitor.js:538 分支内），
+// 其它类型即使配了 proxy_id 也直连；proxy_id 无效或代理被停用时直连。
+func (mgr *Manager) attachProxy(ctx context.Context, mon *model.Monitor) {
+	// 先清旧值：上一次检查注入的内容可能已过期（代理被删/停用）
+	checkers.ClearProxy(mon)
+
+	switch mon.Type {
+	case "http", "keyword", "json-query":
+	default:
+		return
+	}
+
+	pid := mon.GetInt("proxy_id")
+	if pid <= 0 {
+		return
+	}
+	p, err := mgr.mon.ActiveProxyByID(ctx, pid)
+	if err != nil {
+		logx.Debugf("monitor", "监控 %d 的代理 %d 不可用，直连: %v", mon.ID, pid, err)
+		return
+	}
+	checkers.SetProxy(mon, checkers.ProxyInfo{
+		Protocol: p.Protocol,
+		Host:     p.Host,
+		Port:     p.Port,
+		Auth:     p.Auth,
+		Username: p.Username,
+		Password: p.Password,
+		Active:   p.Active,
+	})
 }
 
 // record 落库 + 广播 + 通知。
