@@ -23,7 +23,8 @@ Node.js 后端 + Vue 前端的自托管监控工具）。在此之上，**用 Go
 | `main` | 官方代码 + `go_server/` Go 后端 + CI | 工作分支，日常开发在这 |
 
 同步机制：`main` 定期把 `master` 合并进来，评估官方新提交对后端的影响，
-有后端语义变化就同步到 `go_server`（流程与基线记录见
+有后端语义变化就同步到 `go_server`（完整流程与决策规则见
+[`MAINTAINING.md`](MAINTAINING.md)，基线 commit 与台账见
 [`go_server/SYNC.md`](go_server/SYNC.md)）。
 
 ## Go 后端覆盖了什么
@@ -41,11 +42,16 @@ Node.js 后端 + Vue 前端的自托管监控工具）。在此之上，**用 Go
 **API 对齐的精确程度**：全部 REST 路由与 socket 事件已逐条审计，
 结果在 [`go_server/API-PARITY.md`](go_server/API-PARITY.md) ——
 直接对齐 40 条 REST 中的 39 条、76 个 socket 事件中的 71 个、
-23 个推送中的 19 个；域名到期（RDAP）、TLS 证书、Proxy、远程浏览器、
-状态页徽章、API 文档、MCP（AI 工具接入）、robots.txt/时区初始化等 B 级缺口已按官方逻辑补齐，
-剩余缺口只有截图外链一条（等价偏差：real-browser 不落截图产物）
-（Cloudflared 隧道管理明确不做——部署机直连公网时无使用场景），
-审计文档按安全/功能/等价/占位四级分好类，可直接当 TODO 清单用。
+23 个推送中的 19 个。域名到期（RDAP）、TLS 证书、Proxy、远程浏览器、
+状态页徽章、API 文档、MCP（AI 工具接入）、robots.txt/时区初始化等缺口已按官方逻辑补齐。
+
+剩余差异分三类：**明确不做**（Cloudflared 隧道 5 个事件——部署机直连公网时无使用场景；
+`/screenshots` 静态外链——real-browser 不落截图产物）、**已知功能缺口**（`/metrics` 只有 3 个
+自订 gauge，未实现官方 7 个标准指标，官方 Grafana 面板接不上；`importantHeartbeatList` 推送，
+前端不消费）、**等价实现**（行为一致、机制不同，如 badge 缓存策略、静态资源压缩）。
+
+审计文档按安全/功能/等价/占位/不适用五级分好类，可直接当 TODO 清单用；
+维护流程见 [`MAINTAINING.md`](MAINTAINING.md)。
 
 ## 部署
 
@@ -76,10 +82,11 @@ docker run -d --restart=unless-stopped \
 
 | 文档 | 内容 |
 | --- | --- |
+| [`MAINTAINING.md`](MAINTAINING.md) | **维护指南**：上游同步 SOP、改动分类规则、验证矩阵、发布与回滚、排障手册、文档维护矩阵 |
 | [`go_server/README.md`](go_server/README.md) | Go 后端功能清单、启动参数、已知差异 |
-| [`go_server/API-PARITY.md`](go_server/API-PARITY.md) | **API 对齐审计**：REST + socket 逐条比对 |
+| [`go_server/API-PARITY.md`](go_server/API-PARITY.md) | **API 对齐审计**：REST + socket 逐条比对、缺口分级（A/B/C/D/E） |
 | [`go_server/AGENTS.md`](go_server/AGENTS.md) | Agent/接手指南：目录地图、约定、踩坑实录 |
-| [`go_server/SYNC.md`](go_server/SYNC.md) | 与官方上游的同步基线、文件映射表、操作流程 |
+| [`go_server/SYNC.md`](go_server/SYNC.md) | 同步基线 commit 与历史台账（流程见 MAINTAINING.md） |
 | [`go_server/ROADMAP.md`](go_server/ROADMAP.md) | 改造路线图与完成度记录 |
 
 ## 免责声明

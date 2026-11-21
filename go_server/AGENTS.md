@@ -104,8 +104,9 @@ curl localhost:3999/api/health    # {"ok":true,"version":"..."}
 
 ## 同步官方新改动
 
-**先读 `SYNC.md`**：用基线 commit 圈出 `git log <baseline>..origin/master` 的范围，
-按映射表落到 go_server 对应文件，跑全量测试，socket 改动实连验证，
+**先读根目录 `MAINTAINING.md` §3**（完整 SOP、改动分类规则、验证清单）。
+速记：用基线 commit 圈出 `git log <baseline>..upstream/master` 的范围，
+按分类表落到 go_server 对应文件，跑全量测试，socket 改动实连验证，
 最后更新 `SYNC.md` 的基线与历史记录表。
 
 ## 提交与身份

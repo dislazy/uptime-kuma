@@ -29,10 +29,10 @@ func genCert(t *testing.T, cn string, sans []string, notAfter time.Time) (*x509.
 			Organization: []string{"E2E Test Org"},
 			Country:      []string{"CN"},
 		},
-		NotBefore:   time.Now().Add(-time.Hour),
-		NotAfter:    notAfter,
-		KeyUsage:    x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
 	for _, s := range sans {
@@ -154,7 +154,7 @@ func TestBuildTLSInfoChain(t *testing.T) {
 
 	state := &tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{leaf, inter, root},
-		VerifiedChains:    [][]*x509.Certificate{{leaf, inter, root}},
+		VerifiedChains:   [][]*x509.Certificate{{leaf, inter, root}},
 	}
 
 	info := BuildTLSInfo(state, "leaf.example.com")
