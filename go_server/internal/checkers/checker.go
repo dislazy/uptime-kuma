@@ -6,6 +6,7 @@ package checkers
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sort"
 	"sync"
@@ -24,6 +25,9 @@ type Result struct {
 	Ping *int64
 	// DNSResult 仅 dns 类型使用，会写回 monitor.dns_last_result。
 	DNSResult string
+	// TLS https 探测握手成功后非 nil；由 manager 采集证书信息
+	// （官方 readTlsInfo → handleTlsInfo 链路）。非 https 类型恒为 nil。
+	TLS *tls.ConnectionState
 }
 
 // Checker 是监控类型探测器的接口。

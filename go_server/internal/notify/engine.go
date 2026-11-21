@@ -139,6 +139,36 @@ func (e *Engine) SendTest(ctx context.Context, n *store.Notification) (string, e
 	return e.deliver(ctx, n, Message{Msg: n.Name + " Testing", Test: true})
 }
 
+// NotifyCertificate 对齐官方 Notification.send(config, msg)（证书到期提醒）：
+// 给绑定该监控的所有渠道发一条纯文本，不携带心跳上下文。
+// 返回是否至少有一个渠道发送成功（官方以 sent 标志记录发送历史）。
+func (e *Engine) NotifyCertificate(ctx context.Context, monitorID int64, msg string) bool {
+	list, err := e.notifications.ForMonitor(ctx, monitorID)
+	if err != nil {
+		logx.Errorf("notify", "读取通知列表失败 monitor #%d: %v", monitorID, err)
+		return false
+	}
+
+	sent := false
+	for _, n := range list {
+		if _, err := e.deliver(ctx, n, Message{Msg: msg}); err != nil {
+			logx.Warnf("notify", "证书提醒发送失败 %s(%s): %v", n.Name, n.Type, err)
+			continue
+		}
+		sent = true
+	}
+	return sent
+}
+
+// HasNotifications 快速判断某监控是否绑定了通知渠道（证书提醒的 fail-fast 优化）。
+func (e *Engine) HasNotifications(ctx context.Context, monitorID int64) bool {
+	list, err := e.notifications.ForMonitor(ctx, monitorID)
+	if err != nil {
+		return false
+	}
+	return len(list) > 0
+}
+
 func (e *Engine) deliver(ctx context.Context, n *store.Notification, m Message) (string, error) {
 	p, ok := Get(n.Type)
 	if !ok {

@@ -35,6 +35,7 @@ type API struct {
 	StatusPage *store.StatusPageStore
 	Maint      *store.MaintenanceStore
 	MaintMgr   *maintenance.Manager
+	TLS        *store.TLSInfoStore
 }
 
 // Mount 把全部路由挂到 mux 上。

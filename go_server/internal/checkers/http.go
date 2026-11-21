@@ -85,6 +85,17 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 	}
 	defer res.Body.Close()
 
+	// TLS 证书信息：握手成功即采集（官方 readTlsInfo 在 secureConnect 时读，
+	// 与响应状态无关）。仅 https 协议会有 res.TLS。
+	var tlsState *tls.ConnectionState
+	if res.TLS != nil {
+		tlsState = res.TLS
+	}
+	finish := func(r Result) Result {
+		r.TLS = tlsState
+		return r
+	}
+
 	// 响应体按需读取：只有需要做 keyword / json 断言时才读
 	needBody := m.Type == "keyword" || m.Type == "json-query" ||
 		m.Get("keyword") != "" || m.Get("json_path") != ""
@@ -101,7 +112,7 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 
 	// 1) 状态码
 	if !statusAccepted(res.StatusCode, m.Get("accepted_statuscodes_json")) {
-		return Result{Status: model.StatusDown, Msg: baseMsg, Ping: &ping}
+		return finish(Result{Status: model.StatusDown, Msg: baseMsg, Ping: &ping})
 	}
 
 	// 2) keyword 断言
@@ -112,11 +123,11 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 			matched = !contains
 		}
 		if !matched {
-			return Result{
+			return finish(Result{
 				Status: model.StatusDown,
 				Msg:    baseMsg + ", keyword is " + presentWord(contains),
 				Ping:   &ping,
-			}
+			})
 		}
 		baseMsg += ", keyword is " + presentWord(contains)
 	}
@@ -125,7 +136,7 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 	if path := m.Get("json_path"); path != "" {
 		actual, err := evalJSONPath(body, path)
 		if err != nil {
-			return Result{Status: model.StatusDown, Msg: baseMsg + ", " + err.Error(), Ping: &ping}
+			return finish(Result{Status: model.StatusDown, Msg: baseMsg + ", " + err.Error(), Ping: &ping})
 		}
 		expected := m.Get("expected_value")
 		op := m.Get("json_path_operator")
@@ -133,16 +144,16 @@ func (HTTPChecker) Check(ctx context.Context, m *model.Monitor) Result {
 			op = "=="
 		}
 		if !compareJSON(actual, expected, op) {
-			return Result{
+			return finish(Result{
 				Status: model.StatusDown,
 				Msg:    fmt.Sprintf("%s, JSON query failed (comparing %v %s %s)", baseMsg, actual, op, expected),
 				Ping:   &ping,
-			}
+			})
 		}
 		baseMsg += fmt.Sprintf(", JSON query passes (comparing %v %s %s)", actual, op, expected)
 	}
 
-	return Result{Status: model.StatusUp, Msg: baseMsg, Ping: &ping}
+	return finish(Result{Status: model.StatusUp, Msg: baseMsg, Ping: &ping})
 }
 
 func buildClient(m *model.Monitor) (*http.Client, error) {

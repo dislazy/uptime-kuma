@@ -11,7 +11,7 @@
 | REST 路由（生产挂载） | 40 | 33 | — | 7 | `/metrics` 鉴权已对齐官方（2026-11-21 修复），见 §1.1 |
 | better-auth 端点（前端实际调用） | 10 | 10 | — | 0 | 其余官方端点前端不调用，Go 统一 501 兜底，见 §2 |
 | Socket 事件（客户端→服务端） | 76 | 66 | — | 10 | 缺失集中在 proxy / remote-browser / cloudflared，见 §3 |
-| Socket 推送（服务端→客户端） | 23 | 15 | 3 | 5 | 前端 UI 实际受影响的只有 certInfo / domainInfo，见 §4 |
+| Socket 推送（服务端→客户端） | 23 | 16 | 3 | 4 | 前端 UI 实际受影响的只剩 domainInfo（域名 whois），见 §4 |
 
 > 计数口径：REST 按"官方生产模式挂载的独立端点"逐条计（dev/e2e 专属路由除外）；
 > better-auth 只计前端 `authClient.*` 实际调用的端点；socket 按注册名逐条计。
@@ -43,7 +43,7 @@
 | `GET /api/badge/:id/uptime/:duration?` | api-router.js:568 | 同上 | ✓ |
 | `GET /api/badge/:id/ping/:duration?` | api-router.js:633 | 同上 | ✓ |
 | `GET /api/badge/:id/avg-response/:duration?` | api-router.js:697 | 同上 | ✓ |
-| `GET /api/badge/:id/cert-exp` | api-router.js:762 | 同上 | **恒返回 N/A**：Go 不采集 TLS 证书信息（见 §4） |
+| `GET /api/badge/:id/cert-exp` | api-router.js:762 | 同上 | ✅ 真实数据（2026-11-21 补齐）：官方四分支全对齐——非公开 N/A / 无记录 No/Bad Cert / 无效 Bad Cert / 有效则天数+颜色（>14 绿 >7 黄），date 模式显到期日 |
 | `GET /api/badge/:id/response` | api-router.js:845 | 同上 | ✓ |
 | `GET /api/info` | api-router.js:204 | `httpapi.handleAPIInfo` | requireApiKey，2026-11-21 补齐 |
 | `GET /api/monitors` | api-router.js:222 | `httpapi.handleAPIMonitors` | requireApiKey，toCompactMonitor 脱敏形状 |
@@ -160,7 +160,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 | `heartbeatList` | ✅ | 单监控近期心跳 |
 | `heartbeatLists` | ≈ 等价 | 官方登录后聚合一包；Go 逐监控发 `heartbeatList`，前端两个监听器效果相同 |
 | `importantHeartbeatList` | ❌ | 官方会推但**前端不监听**（socket.js 无注册），仅移动端/API 消费；无 UI 影响 |
-| `certInfo` | ❌ | **真实功能缺失**：Go 不采集 TLS 证书信息（无 monitor_tls_info 写入），前端证书到期列/弹层永远为空，`cert-exp` 徽章恒 N/A |
+| `certInfo` | ✅ | 2026-11-21 补齐：https 握手后采集证书链（对齐 readTlsInfo/parseCertificateInfo 形状，含嵌套 issuerCertificate 与 certType），落库 monitor_tls_info 并推送。E2E 与 openssl 逐秒一致 |
 | `domainInfo` | ❌ | 域名到期信息未采集（依赖 checkDomain 的 RDAP，Go 未接） |
 | `proxyList` | ✅ | 登录推送空列表（因 proxy CRUD 未实现，见 §3.2） |
 | `remoteBrowserList` | ✅ | 同上，空列表 |
@@ -185,13 +185,13 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 
 | # | 功能 | 影响面 |
 | --- | --- | --- |
-| B1 | TLS 证书信息采集 + `certInfo` 推送 + `cert-exp` 徽章 | 证书到期列、到期提醒徽章完全无数据 |
+| B1 | ~~TLS 证书信息采集 + `certInfo` 推送 + `cert-exp` 徽章~~ | ✅ 2026-11-21 已补齐（含证书到期通知：tlsExpiryNotifyDays [7,14,21]、expiry_notification 开关、sent_history 去重、换证书清历史，官方 util.ts:843 全语义） |
 | B2 | Proxy 管理（socket 事件 + checker 消费 `proxy_id`） | Proxies 设置页不可用；接管官方库后带代理监控直连 |
 | B3 | Remote Browser 管理（3 事件） | Remote Browsers 设置页不可用（real-browser 本地 Chromium 仍可用） |
 | B4 | Cloudflared Tunnel（5 事件） | Cloudflared 设置页不可用 |
 | B5 | `/api/docs` + `/api/openapi.json` | Settings→General 的 API 文档链接 404 |
 | B6 | `/api/status-page/:slug/badge` | 状态页整体徽章不可用 |
-| B7 | `domainInfo` + checkDomain（RDAP） | 域名到期信息缺失 |
+| B7 | `domainInfo` + checkDomain（RDAP） | 域名到期信息缺失（TLS 证书到期已由 B1 覆盖，此项是域名 whois，另一条线） |
 | B8 | `/robots.txt`、`/.well-known/change-password` | 低影响 |
 | B9 | `refresh` / `initServerTimezone` 推送 | 体验细节（被踢端不自动刷新；时区初始化弹窗不出现） |
 | B10 | `/mcp` | 上游新功能（AI 工具接入），独立协议栈，暂缓 |
@@ -221,6 +221,7 @@ API Key 的 socket 管理事件（addAPIKey 等）与 REST 鉴权（verifyApiKey
 setup → sign-in → get-session → change-password → 重登录；
 `/metrics` 官方鉴权全链路（prometheusApiEnabled 门控 → Basic Auth 两分支 → apiKey 切换）；
 monitorTag 三事件（add/edit/delete + 回包文案）；
+TLS 证书全链路（https 监控 → certInfo 推送 → monitor_tls_info 落库 → cert-exp 徽章 34 days/绿/date 模式，validTo 与 openssl 逐秒一致）；
 2FA enable/verify/disable；API Key add/list/delete（含 legacy key）；
 REST `/api/info` `/api/monitors`（200/401/403/429）；badge 六 metric；状态页四端点；push 监控；`/metrics` 全鉴权链（404/401/200/apiKey 分支，A1 修复验证）。
 

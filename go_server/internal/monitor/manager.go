@@ -22,6 +22,11 @@ import (
 // Notifier 由 notify.Engine 实现。用接口是为了让 monitor 包不依赖具体渠道实现。
 type Notifier interface {
 	Notify(ctx context.Context, m *model.Monitor, beat model.Beat, prevStatus int)
+	// NotifyCertificate 发送证书到期提醒（官方 Notification.send(config, msg)），
+	// 返回是否至少一个渠道成功。
+	NotifyCertificate(ctx context.Context, monitorID int64, msg string) bool
+	// HasNotifications 快速判断某监控是否绑定了通知渠道（官方 fail-fast 优化）。
+	HasNotifications(ctx context.Context, monitorID int64) bool
 }
 
 // Manager 管理所有监控的运行时状态。
@@ -32,6 +37,8 @@ type Manager struct {
 	stats  *store.StatsStore
 	hub    *hub.Hub
 	notify Notifier
+	tls    *store.TLSInfoStore
+	set    *store.Settings
 
 	maxConcurrent int
 	sem           chan struct{}
@@ -76,6 +83,8 @@ func NewManager(
 	stats *store.StatsStore,
 	h *hub.Hub,
 	n Notifier,
+	tls *store.TLSInfoStore,
+	set *store.Settings,
 	maxConcurrent int,
 ) *Manager {
 	if maxConcurrent <= 0 {
@@ -88,6 +97,8 @@ func NewManager(
 		stats:         stats,
 		hub:           h,
 		notify:        n,
+		tls:           tls,
+		set:           set,
 		maxConcurrent: maxConcurrent,
 		sem:           make(chan struct{}, maxConcurrent),
 		states:        map[int64]*state{},
@@ -500,6 +511,11 @@ func (mgr *Manager) record(ctx context.Context, st *state, res checkers.Result, 
 		if err := mgr.mon.SetColumn(ctx, mon.ID, "dns_last_result", res.DNSResult); err != nil {
 			logx.Debugf("monitor", "回写 dns_last_result 失败: %v", err)
 		}
+	}
+
+	// TLS 证书信息（官方 readTlsInfo → handleTlsInfo 链路）
+	if res.TLS != nil {
+		mgr.handleTLSInfo(ctx, mon, res.TLS)
 	}
 
 	// 实时广播

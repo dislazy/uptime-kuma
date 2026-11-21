@@ -113,8 +113,9 @@ func run(cfg *config.Config) error {
 
 	h := hub.New()
 	engine := notify.NewEngine(notifStore, settings)
+	tlsStore := store.NewTLSInfoStore(db)
 
-	mgr := monitor.NewManager(db, monitorStore, beatStore, statsStore, h, engine, cfg.MaxConcurrentChecks)
+	mgr := monitor.NewManager(db, monitorStore, beatStore, statsStore, h, engine, tlsStore, settings, cfg.MaxConcurrentChecks)
 
 	// 维护窗口：状态由运行时算，监控调度前会先问一遍
 	serverTZ := settings.GetString(ctx, "serverTimezone", serverTimezone())
@@ -141,6 +142,7 @@ func run(cfg *config.Config) error {
 		Cfg: cfg, DB: db, Mon: monitorStore, Beat: beatStore, Stat: statsStore,
 		Set: settings, Auth: authSvc, Hub: h, Mgr: mgr,
 		StatusPage: statusPageStore, Maint: maintStore, MaintMgr: maintMgr,
+		TLS: tlsStore,
 	}
 
 	mux := http.NewServeMux()

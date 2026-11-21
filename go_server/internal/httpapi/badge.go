@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -98,9 +99,66 @@ func (a *API) handleBadge(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case "cert-exp":
-		label = orDefault(label, "Cert Expiry")
-		// 证书到期天数依赖 TLS 信息采集，采集不到时按官方返回 N/A
-		value, color = "N/A", naColor
+		// 官方 api-router.js:762-845 语义：
+		// 非公开 → N/A；无记录 → "No/Bad Cert"；证书无效 → "Bad Cert"；
+		// 有效 → 剩余天数（>14 绿 / >7 黄 / 其余红），suffix " days"
+		label = orDefault(label, "Cert Exp.")
+		if !isPublic {
+			value, color = "N/A", naColor
+			break
+		}
+		infoJSON, exists, err := a.TLS.InfoJSON(r.Context(), id)
+		if err != nil || !exists {
+			value, color = "No/Bad Cert", naColor
+			break
+		}
+		var tlsInfo struct {
+			Valid    bool `json:"valid"`
+			CertInfo struct {
+				DaysRemaining float64 `json:"daysRemaining"`
+				ValidTo       string  `json:"validTo"`
+			} `json:"certInfo"`
+		}
+		if err := json.Unmarshal([]byte(infoJSON), &tlsInfo); err != nil {
+			value, color = "No/Bad Cert", naColor
+			break
+		}
+		if !tlsInfo.Valid {
+			value, color = "Bad Cert", defaultDownColor
+			break
+		}
+		days := int(tlsInfo.CertInfo.DaysRemaining)
+		// value 参数可覆盖展示（官方 demo 用途）
+		if v := q.Get("value"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				days = n
+			}
+		}
+		warnDays, downDays := 14, 7
+		if v := q.Get("warnDays"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				warnDays = n
+			}
+		}
+		if v := q.Get("downDays"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				downDays = n
+			}
+		}
+		switch {
+		case days > warnDays:
+			color = defaultUpColor
+		case days > downDays:
+			color = defaultWarnColor
+		default:
+			color = defaultDownColor
+		}
+		// date 参数：显示到期日而非天数（官方同款）
+		if q.Get("date") != "" {
+			value = tlsInfo.CertInfo.ValidTo
+		} else {
+			value = strconv.Itoa(days) + " days"
+		}
 
 	default:
 		http.Error(w, "unknown badge metric", http.StatusNotFound)
@@ -251,6 +309,7 @@ func renderBadge(label, value, color string) string {
 const (
 	naColor                 = "#999"
 	defaultUpColor          = "#66c20a"
+	defaultWarnColor        = "#eed202"
 	defaultDownColor        = "#c2290a"
 	defaultPendingColor     = "#f8a306"
 	defaultMaintenanceColor = "#1747f5"
